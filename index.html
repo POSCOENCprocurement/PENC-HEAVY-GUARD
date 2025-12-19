@@ -2,446 +2,709 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HeavyGuard AI - POSCO E&C</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>HeavyGuard AI - POSCO E&C RealTime</title>
     
-    <!-- 1. Tailwind CSS (디자인) -->
+    <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 2. React & ReactDOM (엔진) -->
+    <!-- 2. React Engine -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- 3. Babel (코드 변환기) -->
+    <!-- 3. Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        /* 기본 스크롤 방지 및 폰트 설정 */
         body { 
             overflow: hidden; 
             background-color: black; 
             touch-action: none;
-            -webkit-user-select: none;
             user-select: none;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, system-ui, Roboto, Helvetica, Arial, sans-serif;
+            height: 100dvh;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+        
+        /* AR Grid Animation */
+        .ar-grid {
+            background-image: 
+                linear-gradient(rgba(0, 160, 233, 0.3) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 160, 233, 0.3) 1px, transparent 1px);
+            background-size: 40px 40px;
+            transform-style: preserve-3d;
+            perspective: 500px;
+            animation: gridMove 10s linear infinite;
+        }
+        @keyframes gridMove {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 40px; }
         }
         
-        /* 애니메이션 정의 */
-        @keyframes scan {
-          0% { transform: translateY(-100%); opacity: 0; }
-          50% { opacity: 1; }
-          100% { transform: translateY(100%); opacity: 0; }
+        /* Chat Bubble Animation */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes slideUp {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
-        }
-        @keyframes slideDown {
-          from { transform: translateY(-100%); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-        .animate-in { animation-duration: 0.5s; animation-fill-mode: both; }
-        .slide-in-from-right { animation-name: slideInRight; }
-        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .msg-anim { animation: fadeInUp 0.3s ease-out forwards; }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root" class="h-full w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
         
-        // --- 아이콘 컴포넌트 직접 정의 (외부 라이브러리 의존성 제거) ---
+        // --- Gemini API Call Function (Modified to accept key dynamically) ---
+        async function callGeminiAPI(prompt, userKey) {
+            if (!userKey) return "API 키가 등록되지 않았습니다. 설정에서 키를 등록해주세요.";
+            
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${userKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }]
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("API Error Details:", errorData);
+                    throw new Error(`API 호출 실패: ${response.status}`);
+                }
+
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || "죄송합니다. 응답을 생성할 수 없습니다.";
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return "네트워크 오류 또는 잘못된 API 키입니다. 키를 확인해주세요.";
+            }
+        }
+
+        // --- Icons ---
         const Icon = ({ children, size = 24, className = "", ...props }) => (
-            <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width={size} 
-                height={size} 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className={className}
-                {...props}
-            >
-                {children}
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>{children}</svg>
         );
-
-        const Camera = (props) => <Icon {...props}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></Icon>;
-        const AlertTriangle = (props) => <Icon {...props}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></Icon>;
-        const CheckCircle = (props) => <Icon {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></Icon>;
-        const Info = (props) => <Icon {...props}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></Icon>;
-        const Activity = (props) => <Icon {...props}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></Icon>;
-        const Search = (props) => <Icon {...props}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Icon>;
-        const Target = (props) => <Icon {...props}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></Icon>;
-        const Eye = (props) => <Icon {...props}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></Icon>;
-        const Settings = (props) => <Icon {...props}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></Icon>;
-        const Radio = (props) => <Icon {...props}><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></Icon>;
-        const Zap = (props) => <Icon {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Icon>;
-        const ChevronRight = (props) => <Icon {...props}><polyline points="9 18 15 12 9 6"/></Icon>;
-        const BarChart3 = (props) => <Icon {...props}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></Icon>;
-        const Wind = (props) => <Icon {...props}><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></Icon>;
-        const Menu = (props) => <Icon {...props}><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/></Icon>;
-
+        const Target = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></Icon>;
+        const Activity = (p) => <Icon {...p}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></Icon>;
+        const Eye = (p) => <Icon {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></Icon>;
+        const AlertTriangle = (p) => <Icon {...p}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></Icon>;
+        const CheckCircle = (p) => <Icon {...p}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></Icon>;
+        const Ruler = (p) => <Icon {...p}><path d="M2 12h20"/><path d="M6 12v-2"/><path d="M10 12v-3"/><path d="M14 12v-2"/><path d="M18 12v-3"/></Icon>;
+        const Scale = (p) => <Icon {...p}><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></Icon>;
+        const Wind = (p) => <Icon {...p}><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></Icon>;
+        const BarChart3 = (p) => <Icon {...p}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></Icon>;
+        const Zap = (p) => <Icon {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Icon>;
+        const ShieldCheck = (p) => <Icon {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></Icon>;
+        const Search = (p) => <Icon {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Icon>;
+        const RefreshCw = (p) => <Icon {...p}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></Icon>;
+        const CameraIcon = (p) => <Icon {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></Icon>;
+        const Maximize = (p) => <Icon {...p}><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></Icon>;
+        const ScanLine = (p) => <Icon {...p}><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></Icon>;
+        const FileX = (p) => <Icon {...p}><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m14.5 12.5-5 5"/><path d="m9.5 12.5 5 5"/></Icon>;
+        const MessageSquare = (p) => <Icon {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Icon>;
+        const Sparkles = (p) => <Icon {...p}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /></Icon>;
+        const Send = (p) => <Icon {...p}><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></Icon>;
+        const CameraOff = (p) => <Icon {...p}><path d="m2 2 20 20"/><path d="M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16"/><path d="M9.5 4h5L17 7h3a2 2 0 0 1 2 2v7.5"/><path d="M14.121 15.121A3 3 0 1 1 9.88 10.88"/></Icon>;
+        const Image = (p) => <Icon {...p}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></Icon>;
+        const Settings = (p) => <Icon {...p}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></Icon>;
+        const Key = (p) => <Icon {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Icon>;
+        const X = (p) => <Icon {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></Icon>;
 
         const App = () => {
-          const [step, setStep] = useState('scan'); 
-          const [selectedPoint, setSelectedPoint] = useState(null);
-          const [isAnalyzing, setIsAnalyzing] = useState(false);
           const [activeMode, setActiveMode] = useState('inspect'); 
-          const [cameraStatus, setCameraStatus] = useState('initializing'); 
+          const [inspectionStep, setInspectionStep] = useState('init');
           
-          // 실시간 데이터 시뮬레이션
-          const [liveStats, setLiveStats] = useState({
-            angle: 45.2,
-            radius: 12.5,
-            load: 3.2,
-            maxLoad: 5.0,
-            sway: 0.5,
-            wind: 4.2
-          });
+          const [cameraActive, setCameraActive] = useState(false);
+          const [cameraError, setCameraError] = useState(null);
+          const [simulationMode, setSimulationMode] = useState(false); 
+          const [toastMsg, setToastMsg] = useState(null); 
+
+          const [selectedPoint, setSelectedPoint] = useState(null);
+          const [diagnosisStatus, setDiagnosisStatus] = useState('ready');
+          
+          const [angle, setAngle] = useState(0); 
+          const [boomLength, setBoomLength] = useState(30); 
+          const [isMeasuringBoom, setIsMeasuringBoom] = useState(false); 
+          const [load, setLoad] = useState(5.2); 
+          const [wind, setWind] = useState(2.4); 
+          const [motionScore, setMotionScore] = useState(0);
+          
+          const [reportData, setReportData] = useState(null);
+          const [swayCount, setSwayCount] = useState(0); 
+          
+          // API Key Management
+          const [apiKey, setApiKey] = useState('');
+          const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+          
+          const [messages, setMessages] = useState([
+              { role: 'ai', text: '안녕하세요! 포스코이앤씨 안전 AI 비서입니다. 작업 안전 기준이나 장비 점검에 대해 궁금한 점을 물어보세요.' }
+          ]);
+          const [chatInput, setChatInput] = useState('');
+          const [isAiThinking, setIsAiThinking] = useState(false);
+          const [aiReportAnalysis, setAiReportAnalysis] = useState(null); 
+          const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+          const [isIOS, setIsIOS] = useState(false);
+          
+          const videoRef = useRef(null);
+          const canvasRef = useRef(null); 
+          const lastFrameData = useRef(null);
+          const requestRef = useRef(null);
+          const chatEndRef = useRef(null);
+
+          // Initialize Key
+          useEffect(() => {
+              const storedKey = localStorage.getItem('gemini_api_key');
+              if (storedKey) {
+                  setApiKey(storedKey);
+              } else {
+                  // If no key found, prompt user
+                  setTimeout(() => setIsKeyModalOpen(true), 1000);
+              }
+          }, []);
+
+          const saveApiKey = (key) => {
+              localStorage.setItem('gemini_api_key', key);
+              setApiKey(key);
+              setIsKeyModalOpen(false);
+              setToastMsg("API 키가 저장되었습니다.");
+              setTimeout(() => setToastMsg(null), 2000);
+          };
+
+          const clearApiKey = () => {
+              localStorage.removeItem('gemini_api_key');
+              setApiKey('');
+              setToastMsg("API 키가 삭제되었습니다.");
+              setTimeout(() => setToastMsg(null), 2000);
+          };
+
+          // 1. Camera & Device Detection (Retry & Auto Fallback)
+          async function startCamera() {
+              setCameraError(null);
+              // 초기화 시엔 시뮬레이션 모드를 끄지 않고, 권한 획득 성공 시에만 끔
+              try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("API Not Available");
+                }
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" } 
+                });
+                if (videoRef.current) {
+                  videoRef.current.srcObject = stream;
+                  setCameraActive(true);
+                  setSimulationMode(false); 
+                }
+              } catch (err) {
+                console.warn("Camera permission denied or error:", err);
+                setCameraActive(false);
+                setSimulationMode(true);
+                setToastMsg("카메라 권한 문제로 시뮬레이션 모드가 실행됩니다.");
+                setTimeout(() => setToastMsg(null), 3000);
+              }
+          }
 
           useEffect(() => {
-            setCameraStatus('initializing');
-            const timer = setTimeout(() => setCameraStatus('active'), 1000);
-            return () => clearTimeout(timer);
-          }, [step]);
+            const checkIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+            setIsIOS(checkIOS);
+
+            startCamera();
+            
+            const handleOrientation = (event) => {
+                let beta = event.beta; 
+                if (beta === null) return;
+                let rawAngle = Math.abs(beta);
+                if (rawAngle > 90) rawAngle = 90;
+                setAngle(rawAngle.toFixed(1));
+            };
+            window.addEventListener('deviceorientation', handleOrientation);
+            return () => window.removeEventListener('deviceorientation', handleOrientation);
+          }, []);
 
           useEffect(() => {
-            if (step === 'operation') {
-              const interval = setInterval(() => {
-                setLiveStats(prev => ({
-                  ...prev,
-                  angle: +(prev.angle + (Math.random() - 0.5) * 0.5).toFixed(1),
-                  load: +(prev.load + (Math.random() - 0.5) * 0.1).toFixed(1),
-                  sway: Math.random() * 2,
-                  wind: +(4.2 + (Math.random() - 0.5)).toFixed(1)
-                }));
-              }, 1000);
-              return () => clearInterval(interval);
-            }
-          }, [step]);
+              if (activeMode === 'chat') {
+                  chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+              }
+          }, [messages, activeMode]);
+
+          // 2. Motion Detection & Simulation
+          const processVideo = () => {
+              if (simulationMode) {
+                  // 시뮬레이션 모드일 때 가짜 데이터 생성
+                  if (activeMode === 'operate') {
+                      setMotionScore(prev => {
+                          const noise = Math.random() * 0.5;
+                          if (Math.random() > 0.95) return 20; // 가끔 튀는 값
+                          return Math.max(0, prev * 0.9 + noise);
+                      });
+                      
+                      if (motionScore > 15) { 
+                          setSwayCount(prev => prev + 0.05);
+                      }
+                  }
+                  requestRef.current = requestAnimationFrame(processVideo);
+                  return;
+              }
+
+              // 실제 카메라 모드
+              if (!videoRef.current || !canvasRef.current) return;
+              const video = videoRef.current;
+              const canvas = canvasRef.current;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              const width = 32;
+              const height = 32;
+              
+              if (canvas.width !== width) { canvas.width = width; canvas.height = height; }
+              ctx.drawImage(video, 0, 0, width, height);
+              
+              try {
+                  const frame = ctx.getImageData(0, 0, width, height);
+                  const data = frame.data;
+                  if (lastFrameData.current) {
+                      let diff = 0;
+                      for (let i = 0; i < data.length; i += 4) { 
+                          diff += Math.abs(data[i] - lastFrameData.current[i]);     
+                      }
+                      const score = diff / (width * height);
+                      setMotionScore(prev => (prev * 0.8) + (score * 0.2)); 
+                      
+                      if (score > 15) { 
+                          setSwayCount(prev => prev + 0.05);
+                      }
+                  }
+                  lastFrameData.current = data;
+              } catch (e) {}
+              requestRef.current = requestAnimationFrame(processVideo);
+          };
+
+          useEffect(() => {
+              if ((cameraActive || simulationMode) && activeMode === 'operate') {
+                  requestRef.current = requestAnimationFrame(processVideo);
+              } else {
+                  if (requestRef.current) cancelAnimationFrame(requestRef.current);
+              }
+              return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
+          }, [cameraActive, activeMode, simulationMode, motionScore]);
+
+          const goToReport = () => {
+              if (activeMode === 'operate') {
+                  const finalSway = Math.floor(swayCount);
+                  const safetyScore = Math.max(0, 100 - (finalSway * 5)); 
+                  
+                  let comment = "안전하게 작업이 완료되었습니다.";
+                  if (finalSway > 5) comment = "급조작이 다수 감지되었습니다. 붐대 선회 속도를 줄이십시오.";
+                  else if (finalSway > 2) comment = "약간의 흔들림이 있었습니다. 조금 더 부드러운 조작이 필요합니다.";
+
+                  setReportData({
+                      score: safetyScore,
+                      swayCount: finalSway,
+                      comment: comment,
+                      date: new Date().toLocaleTimeString(),
+                      stats: { wind, load, boomLength }
+                  });
+              }
+              setActiveMode('report');
+          };
+
+          const handleSendMessage = async () => {
+              if (!chatInput.trim()) return;
+              
+              if (!apiKey) {
+                  setMessages(prev => [...prev, { role: 'ai', text: 'API 키가 설정되지 않았습니다. 상단 설정 버튼을 눌러 키를 등록해주세요.' }]);
+                  setIsKeyModalOpen(true);
+                  return;
+              }
+
+              const userMsg = chatInput;
+              setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+              setChatInput('');
+              setIsAiThinking(true);
+
+              const prompt = `
+                너는 포스코이앤씨 건설현장 안전 관리 AI 비서야.
+                사용자의 질문: "${userMsg}"
+                답변 가이드:
+                1. 한국 산업안전보건법 및 KOSHA 가이드를 기준으로 답변해.
+                2. 건설 현장 용어를 사용하여 전문적이고 간결하게 답변해.
+                3. 안전과 관련된 내용은 엄격하게, 조작법은 친절하게 설명해.
+              `;
+
+              const aiResponse = await callGeminiAPI(prompt, apiKey);
+              
+              setMessages(prev => [...prev, { role: 'ai', text: aiResponse }]);
+              setIsAiThinking(false);
+          };
+
+          const generateAIReport = async () => {
+              if (!reportData) return;
+              
+              if (!apiKey) {
+                  setToastMsg("API 키 등록이 필요합니다.");
+                  setIsKeyModalOpen(true);
+                  return;
+              }
+
+              setIsGeneratingReport(true);
+
+              const prompt = `
+                다음은 건설 현장 크레인 작업 로그 데이터야. 이를 바탕으로 안전 작업 분석 리포트를 작성해줘.
+                
+                [작업 데이터]
+                - 안전 점수: ${reportData.score}점 / 100점
+                - 급조작(흔들림) 감지 횟수: ${reportData.swayCount}회
+                - 평균 풍속: ${reportData.stats.wind}m/s
+                - 작업 하중: ${reportData.stats.load}톤
+                - 붐 길이: ${reportData.stats.boomLength}m
+
+                [요청 사항]
+                1. 작업자의 숙련도를 평가해줘.
+                2. 발생한 위험 요소(급조작 등)에 대한 구체적인 개선 피드백을 줘.
+                3. 현재 풍속과 하중을 고려할 때 주의할 점을 알려줘.
+                4. 말투는 '해요'체를 사용하고 격려하는 톤으로 작성해.
+                5. 3줄 이내로 요약해줘.
+              `;
+
+              const analysis = await callGeminiAPI(prompt, apiKey);
+              setAiReportAnalysis(analysis);
+              setIsGeneratingReport(false);
+          };
+
+          const radius = useMemo(() => {
+              const rad = angle * (Math.PI / 180);
+              const r = boomLength * Math.cos(rad);
+              return Math.max(0, r).toFixed(1);
+          }, [angle, boomLength]);
+
+          const startScan = () => {
+              setInspectionStep('scanning');
+              setTimeout(() => { setInspectionStep('mapped'); }, 2000);
+          };
+          const resetScan = () => { setInspectionStep('init'); setSelectedPoint(null); };
+          const handlePointClick = (p) => { setSelectedPoint(p); setDiagnosisStatus('ready'); };
+          const startDiagnosis = () => {
+              setDiagnosisStatus('analyzing');
+              setTimeout(() => { setDiagnosisStatus('done'); }, 2000);
+          };
+
+          const measureBoom = () => {
+              setIsMeasuringBoom(true);
+              setTimeout(() => {
+                  setIsMeasuringBoom(false);
+                  setBoomLength(Math.floor(Math.random() * (45 - 25 + 1) + 25));
+              }, 3000);
+          };
+
+          const enableSimulation = () => {
+              setSimulationMode(true);
+              setCameraError(null);
+          };
 
           const inspectionPoints = [
-            { id: 1, name: 'Main Wire Rope', sub: '소선 단선 및 부식', top: '45%', left: '40%', status: 'danger', issue: '단선율 12% (교체필요)', law: '산안법 제63조' },
-            { id: 2, name: 'Joint Pin Bolt', sub: '체결 상태 및 유격', top: '35%', left: '55%', status: 'warning', issue: '미세 유격 감지', law: 'KOSHA G-10' },
-            { id: 3, name: 'Outrigger System', sub: '지반 지지력', top: '85%', left: '30%', status: 'success', issue: '접지 상태 양호', law: '안전기준 적합' }
+            { id: 1, name: '와이어로프 (Wire Rope)', top: '40%', left: '50%', status: 'danger', issue: '소선 단선 (12%) 감지됨', criteria: '산안법 제63조: 이음매 발생, 소선 10% 이상 단선, 지름 7% 초과 감소 시 사용 금지' },
+            { id: 2, name: '훅 블록 (Hook Block)', top: '60%', left: '45%', status: 'warning', issue: '안전래치 마모 및 유격', criteria: 'KOSHA 가이드: 훅의 입구가 변형되거나 안전래치가 정상 복귀되지 않을 시 교체' },
           ];
 
-          const handlePointClick = (point) => {
-            setSelectedPoint(point);
-            setIsAnalyzing(true);
-            setTimeout(() => setIsAnalyzing(false), 1500);
-            setStep('inspection');
-          };
-
-          const switchMode = (mode) => {
-            setStep(mode === 'inspect' ? 'mapping' : 'operation');
-            setActiveMode(mode);
-          };
-
           return (
-            <div className="flex flex-col h-screen bg-black font-sans text-white overflow-hidden select-none relative">
+            <div className="flex flex-col h-[100dvh] bg-black text-white overflow-hidden relative safe-pb">
               
-              {/* 1. Header */}
-              <div className="absolute top-0 left-0 right-0 z-50 p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent">
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-2 mb-1">
-                     <div className="w-2 h-2 rounded-full bg-[#00A0E9] shadow-[0_0_10px_#00A0E9]"></div>
-                     <span className="text-xs font-medium tracking-widest text-[#00A0E9] uppercase">POSCO E&C Smart Safety</span>
+              {/* API Key Modal */}
+              {isKeyModalOpen && (
+                  <div className="absolute inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center p-6 animate-in fade-in">
+                      <div className="bg-[#1c1c1e] w-full max-w-sm p-6 rounded-2xl border border-white/10 shadow-2xl">
+                          <div className="flex items-center justify-between mb-6">
+                              <h3 className="text-lg font-bold text-white flex items-center gap-2"><Key size={20} className="text-[#00A0E9]"/> API 키 설정</h3>
+                              <button onClick={() => setIsKeyModalOpen(false)} className="text-white/50 hover:text-white"><X size={20}/></button>
+                          </div>
+                          <p className="text-xs text-white/60 mb-4 leading-relaxed">
+                              Gemini AI 기능을 사용하려면 Google AI Studio에서 발급받은 API 키가 필요합니다.
+                              <br/>(키는 브라우저에만 저장됩니다)
+                          </p>
+                          <input 
+                              type="password" 
+                              placeholder="API Key 입력 (AIza...)" 
+                              className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-white mb-4 focus:border-[#00A0E9] outline-none"
+                              defaultValue={apiKey}
+                              id="apiKeyInput"
+                          />
+                          <div className="flex gap-3">
+                              {apiKey && (
+                                  <button onClick={clearApiKey} className="flex-1 py-3 bg-red-500/10 text-red-500 rounded-xl font-bold text-sm border border-red-500/20">삭제</button>
+                              )}
+                              <button 
+                                  onClick={() => saveApiKey(document.getElementById('apiKeyInput').value)} 
+                                  className="flex-[2] py-3 bg-[#00A0E9] text-white rounded-xl font-bold text-sm shadow-lg hover:bg-[#008AC9] transition-colors"
+                              >
+                                  저장 및 시작
+                              </button>
+                          </div>
+                          <div className="mt-4 text-center">
+                              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-[10px] text-[#00A0E9] underline">
+                                  Google AI Studio에서 키 발급받기 &rarr;
+                              </a>
+                          </div>
+                      </div>
                   </div>
-                  <h1 className="text-xl font-light tracking-tight text-white">HeavyGuard <span className="font-bold">AI</span></h1>
-                </div>
-                <div className="flex gap-3">
-                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/5">
-                    <Radio size={12} className={cameraStatus === 'active' ? 'text-green-400 animate-pulse' : 'text-gray-400'} />
-                    <span className="text-[10px] font-medium text-white/80 uppercase tracking-wider">
-                      {cameraStatus === 'active' ? 'Live Vision' : 'Connecting...'}
-                    </span>
+              )}
+
+              {/* Header */}
+              <div className="absolute top-0 w-full p-4 pt-safe z-50 bg-gradient-to-b from-black/90 to-transparent flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-[#00A0E9] shadow-[0_0_8px_#00A0E9]"></div>
+                      <h1 className="text-sm font-bold tracking-wider">HeavyGuard <span className="text-[#00A0E9]">AI</span></h1>
                   </div>
-                  <div className="p-2 bg-white/10 rounded-full backdrop-blur-md border border-white/5">
-                    <Menu size={18} className="text-white/80" />
+                  <div className="flex gap-2">
+                      <div className="bg-white/10 px-3 py-1 rounded-full border border-white/5 backdrop-blur-md flex items-center gap-2">
+                          <span className="text-[10px] uppercase font-bold text-white/80">
+                              {simulationMode ? 'Simulation' : (activeMode === 'operate' ? 'Live Sensing' : 
+                               activeMode === 'inspect' ? 'AI Inspection' : 
+                               activeMode === 'chat' ? 'Safety Chat' : 'Report')}
+                          </span>
+                          {isIOS && activeMode === 'operate' && !simulationMode && (
+                              <span className="text-[8px] bg-[#00A0E9] text-white px-1.5 py-0.5 rounded font-bold tracking-tighter">LiDAR</span>
+                          )}
+                      </div>
+                      
+                      {/* API Key Settings Button */}
+                      <button onClick={() => setIsKeyModalOpen(true)} className={`p-1.5 rounded-full border backdrop-blur-md ${apiKey ? 'bg-white/10 border-white/5 text-white/80' : 'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse'}`}>
+                          <Settings size={14} />
+                      </button>
+
+                      {activeMode === 'inspect' && inspectionStep === 'mapped' && (
+                          <button onClick={resetScan} className="bg-white/10 p-1.5 rounded-full border border-white/5 backdrop-blur-md">
+                              <RefreshCw size={14} className="text-white/80"/>
+                          </button>
+                      )}
                   </div>
-                </div>
               </div>
 
-              {/* 2. Main Viewport */}
-              <div className="relative flex-1 bg-black">
-                <div 
-                  className={`absolute inset-0 bg-cover bg-center transition-all duration-1000 ease-out ${cameraStatus === 'initializing' ? 'scale-105 blur-2xl opacity-50' : 'scale-100 blur-0 opacity-80'}`}
-                  style={{ backgroundImage: "url('https://images.unsplash.com/photo-1541888946425-d81bb19480c5?auto=format&fit=crop&q=80&w=1000')" }}
-                ></div>
-
-                {/* Scan Mode */}
-                {step === 'scan' && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <div className="relative w-72 h-72">
-                      <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-white/80 rounded-tl-3xl"></div>
-                      <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-white/80 rounded-tr-3xl"></div>
-                      <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-white/80 rounded-bl-3xl"></div>
-                      <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-white/80 rounded-br-3xl"></div>
-                      <div className="absolute inset-0 bg-gradient-to-b from-[#00A0E9]/0 via-[#00A0E9]/20 to-[#00A0E9]/0 animate-[scan_2s_infinite]"></div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Target size={48} className="text-white/20" />
+              {/* Viewport */}
+              <div className="relative flex-1 bg-gray-900 w-full overflow-hidden">
+                  {/* Background Rendering Logic */}
+                  {simulationMode ? (
+                      <div 
+                        className="absolute inset-0 bg-cover bg-center opacity-80"
+                        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1541888946425-d81bb19480c5?auto=format&fit=crop&q=80&w=1000')" }}
+                      ></div>
+                  ) : (
+                      <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover opacity-80"></video>
+                  )}
+                  
+                  {/* Toast Notification */}
+                  {toastMsg && (
+                      <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-white/90 text-black px-4 py-2 rounded-full text-xs font-bold shadow-xl z-[60] animate-in fade-in slide-in-from-top-2 whitespace-nowrap">
+                          {toastMsg}
                       </div>
-                    </div>
-
-                    <div className="mt-12 text-center space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                      <h2 className="text-2xl font-light text-white">장비 인식</h2>
-                      <p className="text-sm text-white/60 font-light">카메라를 장비 전체가 보이도록 비추세요.</p>
-                    </div>
-
-                    <button 
-                      onClick={() => { setStep('mapping'); }}
-                      className="mt-10 px-8 py-3 bg-[#00A0E9] hover:bg-[#008AC9] text-white rounded-full font-medium text-sm shadow-[0_0_20px_rgba(0,160,233,0.4)] transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <Zap size={16} fill="currentColor" /> 스마트 스캔 시작
-                    </button>
-                  </div>
-                )}
-
-                {/* AR Overlay Layer */}
-                {(step === 'mapping' || step === 'operation') && (
-                  <div className="absolute inset-0">
-                    <div className="absolute top-24 left-1/2 -translate-x-1/2 flex bg-black/40 backdrop-blur-xl p-1 rounded-full border border-white/10 shadow-lg z-20">
-                      <button 
-                        onClick={() => switchMode('inspect')}
-                        className={`px-6 py-2 rounded-full text-xs font-medium transition-all duration-300 ${activeMode === 'inspect' ? 'bg-white text-black shadow-md' : 'text-white/60 hover:text-white'}`}
-                      >
-                        Inspection
-                      </button>
-                      <button 
-                        onClick={() => switchMode('operate')}
-                        className={`px-6 py-2 rounded-full text-xs font-medium transition-all duration-300 ${activeMode === 'operate' ? 'bg-white text-black shadow-md' : 'text-white/60 hover:text-white'}`}
-                      >
-                        Operation
-                      </button>
-                    </div>
-
-                    {/* Inspect Mode */}
-                    {activeMode === 'inspect' && step === 'mapping' && inspectionPoints.map((p) => (
-                      <div key={p.id} style={{ top: p.top, left: p.left }} className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 group">
-                        <button 
-                          onClick={() => handlePointClick(p)}
-                          className={`relative w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-transform duration-300 group-hover:scale-110 ${p.status === 'danger' ? 'bg-red-500/20 ring-1 ring-red-500' : p.status === 'warning' ? 'bg-amber-500/20 ring-1 ring-amber-500' : 'bg-[#00A0E9]/20 ring-1 ring-[#00A0E9]'}`}
-                        >
-                          <div className={`w-3 h-3 rounded-full ${p.status === 'danger' ? 'bg-red-500' : p.status === 'warning' ? 'bg-amber-500' : 'bg-[#00A0E9]'} shadow-[0_0_10px_currentColor]`}></div>
-                        </button>
-                        <div className="absolute left-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-                          <div className="bg-black/60 backdrop-blur-xl px-4 py-2 rounded-xl border border-white/10">
-                            <p className="text-xs font-bold text-white whitespace-nowrap">{p.name}</p>
-                            <p className="text-[10px] text-white/60">{p.sub}</p>
+                  )}
+                  
+                  {/* Camera Error UI (Fallback Button) */}
+                  {cameraError && !simulationMode && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-50 p-6 text-center animate-in fade-in">
+                          <div className="bg-white/10 p-4 rounded-full mb-4 animate-bounce">
+                              <CameraOff size={32} className="text-red-500" />
                           </div>
-                        </div>
+                          <h2 className="text-xl font-bold mb-2">카메라 권한 필요</h2>
+                          <p className="text-sm text-white/60 mb-8 max-w-[250px]">
+                              안전 점검을 위해 카메라 접근 권한이 필요합니다.<br/>
+                              설정에서 권한을 허용하거나<br/>시뮬레이션 모드를 사용하세요.
+                          </p>
+                          <div className="flex flex-col gap-3 w-full max-w-xs">
+                              <button 
+                                  onClick={startCamera} 
+                                  className="w-full px-6 py-3 bg-[#00A0E9] rounded-xl font-bold text-sm hover:bg-[#008AC9] transition-colors shadow-lg shadow-[#00A0E9]/20"
+                              >
+                                  권한 재요청 (Retry)
+                              </button>
+                              <button 
+                                  onClick={enableSimulation} 
+                                  className="w-full px-6 py-3 bg-white/10 rounded-xl font-bold text-sm hover:bg-white/20 transition-colors text-white/80 flex items-center justify-center gap-2 border border-white/5"
+                              >
+                                  <Image size={16}/> 시뮬레이션 모드 사용
+                              </button>
+                          </div>
                       </div>
-                    ))}
+                  )}
+                  
+                  {/* AR Grid (Zone Visualization) */}
+                  {activeMode === 'operate' && (cameraActive || simulationMode) && (
+                      <div className="absolute bottom-0 w-full h-1/2 overflow-hidden pointer-events-none opacity-40">
+                          <div className="ar-grid w-full h-full origin-bottom" style={{ transform: `rotateX(60deg) scale(${1 + radius/50})` }}></div>
+                          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-[#00A0E9] font-bold tracking-widest uppercase">Safe Zone: {radius}m Radius</div>
+                      </div>
+                  )}
 
-                    {/* Operate Mode */}
-                    {activeMode === 'operate' && (
+                  {/* Mode 1: INSPECT */}
+                  {activeMode === 'inspect' && !cameraError && (
+                      <div className="absolute inset-0">
+                          {/* ... (Inspect UI logic is consistent) ... */}
+                          {inspectionStep === 'init' && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm p-6 text-center animate-in fade-in">
+                                  <div className="w-64 h-64 border-[1px] border-white/20 rounded-[40px] flex items-center justify-center relative overflow-hidden mb-6">
+                                      <div className="absolute inset-0 bg-gradient-to-b from-[#00A0E9]/0 via-[#00A0E9]/30 to-[#00A0E9]/0 animate-[scan_2s_infinite]"></div>
+                                      <Target size={48} className="text-white/40" />
+                                  </div>
+                                  <div className="space-y-4 flex flex-col items-center">
+                                      <div><h2 className="text-xl font-light mb-1">AI 장비 자동 인식</h2><p className="text-xs text-white/60 whitespace-nowrap">현장의 모든 건설기계 및 장비를 자동으로 식별합니다.</p></div>
+                                      <button onClick={startScan} className="bg-[#00A0E9] hover:bg-[#008AC9] text-white px-8 py-3 rounded-2xl font-bold text-sm shadow-[0_4px_20px_rgba(0,160,233,0.3)] transition-transform active:scale-95 whitespace-nowrap flex items-center gap-2 mt-4"><Search size={16}/> AI 스마트 스캔 시작</button>
+                                  </div>
+                              </div>
+                          )}
+                          {inspectionStep === 'scanning' && (<div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20 backdrop-blur-[2px]"><div className="w-20 h-20 border-4 border-[#00A0E9] border-t-transparent rounded-full animate-spin relative"><div className="absolute inset-0 flex items-center justify-center"><Eye size={24} className="text-[#00A0E9] animate-pulse"/></div></div><p className="mt-6 text-sm font-bold text-white tracking-widest animate-pulse">AI ANALYZING...</p></div>)}
+                          {inspectionStep === 'mapped' && inspectionPoints.map(p => (
+                              <div key={p.id} style={{top: p.top, left: p.left}} className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 animate-[bounce_2s_infinite]"><button onClick={() => handlePointClick(p)} className={`w-14 h-14 rounded-full flex items-center justify-center backdrop-blur-md border-2 shadow-lg transition-transform active:scale-90 ${p.status === 'danger' ? 'bg-red-500/30 border-red-500' : 'bg-yellow-500/30 border-yellow-500'}`}><Search size={24} className="text-white"/></button><div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap border border-white/20 backdrop-blur-md">{p.name}</div></div>
+                          ))}
+                          {selectedPoint && (
+                              <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-30 flex items-end" onClick={() => setSelectedPoint(null)}>
+                                  <div className="bg-[#1c1c1e] w-full p-6 pb-safe-bottom rounded-t-[2rem] shadow-2xl border-t border-white/10 animate-[slideUp_0.3s_ease-out]" onClick={(e) => e.stopPropagation()}>
+                                      <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6"></div>
+                                      <div className="flex items-start justify-between mb-6">
+                                          <div><span className="text-[#00A0E9] text-[10px] font-bold tracking-widest uppercase mb-1 block">Component Inspection</span><h3 className="text-2xl font-bold text-white">{selectedPoint.name}</h3></div>
+                                          <div className="p-3 bg-white/5 rounded-full border border-white/10"><Target size={20} className="text-white/80"/></div>
+                                      </div>
+                                      {diagnosisStatus === 'ready' && (<div className="space-y-4"><div className="bg-white/5 p-5 rounded-2xl border border-white/5"><div className="flex items-center gap-2 mb-2 text-white/60"><ShieldCheck size={14} /><span className="text-xs font-bold uppercase">Safety Criteria (점검 기준)</span></div><p className="text-sm leading-relaxed font-medium text-white/90 break-keep">"{selectedPoint.criteria}"</p></div><button onClick={startDiagnosis} className="w-full py-4 bg-[#00A0E9] text-white font-bold rounded-2xl active:scale-95 transition-transform shadow-lg flex items-center justify-center gap-2"><Zap size={18} fill="currentColor"/> AI 정밀 진단 시작</button></div>)}
+                                      {diagnosisStatus === 'analyzing' && (<div className="py-10 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#00A0E9] border-t-transparent rounded-full animate-spin"></div><p className="text-sm font-bold text-[#00A0E9] animate-pulse">이미지 정밀 분석 중...</p></div>)}
+                                      {diagnosisStatus === 'done' && (<div className="space-y-4 animate-[slideInRight_0.3s_ease-out]"><div className={`p-5 rounded-2xl border flex items-center gap-4 ${selectedPoint.status === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-yellow-500/10 border-yellow-500/30'}`}><div className={`p-3 rounded-full ${selectedPoint.status === 'danger' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'}`}><AlertTriangle size={24} /></div><div><p className={`text-xs font-bold uppercase ${selectedPoint.status === 'danger' ? 'text-red-400' : 'text-yellow-400'}`}>AI Diagnosis Result</p><p className="text-lg font-bold text-white">{selectedPoint.issue}</p></div></div><div className="flex gap-3"><button onClick={() => setSelectedPoint(null)} className="flex-1 py-4 bg-white/10 text-white font-bold rounded-2xl">닫기</button><button onClick={() => setActiveMode('operate')} className="flex-1 py-4 bg-white text-black font-bold rounded-2xl shadow-lg">작업 모드로 이동</button></div></div>)}
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  )}
+
+                  {/* Mode 2: OPERATE */}
+                  {activeMode === 'operate' && (cameraActive || simulationMode) && (
                       <div className="absolute inset-0 pointer-events-none">
-                        <div className="absolute bottom-[-20%] left-[-20%] w-[140%] h-[60%] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500/10 via-transparent to-transparent opacity-50 transform -rotateX-60 scale-y-50 pointer-events-none"></div>
-                        <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 text-red-500/80 text-[10px] font-bold tracking-[0.2em] uppercase animate-pulse">
-                          Danger Zone Detected
-                        </div>
-
-                        <div className="absolute top-40 left-6 flex flex-col gap-4">
-                          <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/5 w-32">
-                            <div className="flex items-center gap-2 text-white/50 text-[10px] uppercase font-bold mb-1">
-                              <Target size={12} /> Boom Angle
-                            </div>
-                            <div className="text-3xl font-light text-white">{liveStats.angle}°</div>
+                          {/* HUD: Left */}
+                          <div className="absolute top-24 left-4 pointer-events-auto">
+                              <div className="bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 w-40 mb-2">
+                                  <div className="flex items-center gap-2 mb-1 opacity-70"><Activity size={12} className="text-[#00A0E9]" /><span className="text-[10px] font-bold uppercase">붐 각도</span></div>
+                                  <div className="text-3xl font-light tracking-tighter">{angle}°</div>
+                              </div>
+                              <div className="bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 w-40">
+                                  <div className="flex items-center gap-2 mb-1 opacity-70"><Ruler size={12} className="text-green-400" /><span className="text-[10px] font-bold uppercase">작업 반경</span></div>
+                                  <div className="text-3xl font-light tracking-tighter text-green-400">{radius}m</div>
+                                  <div className="text-[9px] text-white/40 mt-1 flex items-center gap-1"><Scale size={9}/> AR Calculation</div>
+                              </div>
                           </div>
-                          <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/5 w-32">
-                            <div className="flex items-center gap-2 text-white/50 text-[10px] uppercase font-bold mb-1">
-                              <Wind size={12} /> Wind Spd
-                            </div>
-                            <div className="text-3xl font-light text-white">{liveStats.wind}<span className="text-sm ml-1 text-white/50">m/s</span></div>
+                          <div className="absolute top-24 right-4 pointer-events-auto space-y-2">
+                              <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44">
+                                  <div className="flex justify-between text-[10px] font-bold uppercase mb-2"><span className="flex items-center gap-1 text-[#00A0E9]"><Ruler size={10}/> 붐 길이 (AI)</span><span className="text-white text-lg">{boomLength}m</span></div>
+                                  {isMeasuringBoom ? (<div className="h-8 bg-black/40 rounded-lg flex items-center justify-center border border-[#00A0E9] animate-pulse"><span className="text-[10px] text-[#00A0E9] font-bold">Measuring...</span></div>) : (<button onClick={measureBoom} className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border border-white/10"><Maximize size={10}/> 붐 길이 측정</button>)}
+                              </div>
+                              <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Scale size={10}/> 추정 하중</span><span className="text-white">{load}t</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-green-500 h-full" style={{width: '40%'}}></div></div></div>
+                              <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Wind size={10}/> 현장 풍속</span><span>{wind}m/s</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-blue-400 h-full" style={{width: '20%'}}></div></div></div>
                           </div>
-                        </div>
+                          {isMeasuringBoom && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none">{isIOS && !simulationMode ? (<div className="w-full h-full flex items-center justify-center relative"><div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(0,160,233,0.2)_1px,_transparent_1px)] bg-[length:20px_20px] animate-pulse opacity-50"></div><div className="relative w-72 h-72 border-2 border-[#00A0E9] rounded-lg flex items-center justify-center"><ScanLine size={300} className="text-[#00A0E9]/30 absolute animate-pulse"/><p className="absolute -bottom-10 text-xs font-bold text-[#00A0E9] bg-black/60 px-3 py-1 rounded-full border border-[#00A0E9]/30">LiDAR Precision Scan Active</p></div></div>) : (<div className="relative w-64 h-64 border border-[#00A0E9]/50 rounded-lg flex items-center justify-center"><div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#00A0E9]"></div><div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#00A0E9]"></div><div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#00A0E9]"></div><div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#00A0E9]"></div><div className="w-2 h-2 bg-[#00A0E9] rounded-full animate-ping"></div><p className="absolute -bottom-8 text-xs font-bold text-[#00A0E9] bg-black/50 px-2 py-1 rounded">붐 끝단을 중앙에 맞추세요</p></div>)}</div>)}
+                          <div className="absolute bottom-36 left-6 right-6"><div className="bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10 p-4"><div className="flex justify-between items-center mb-2"><span className="text-[10px] font-bold uppercase flex items-center gap-2"><Eye size={12} className={motionScore > 10 ? "text-red-500" : "text-white"}/> AI 흔들림 감지</span><span className={`text-xs font-bold ${motionScore > 10 ? "text-red-500 animate-pulse" : "text-white/50"}`}>{motionScore > 10 ? "흔들림 감지됨" : "안정 상태"}</span></div><div className="h-2 w-full bg-white/10 rounded-full overflow-hidden flex items-center"><div className={`h-full transition-all duration-100 ${motionScore > 15 ? 'bg-red-500' : 'bg-[#00A0E9]'}`} style={{ width: `${Math.min(motionScore * 5, 100)}%` }}></div></div></div></div>
+                      </div>
+                  )}
 
-                        <div className="absolute top-40 right-6 flex flex-col gap-4 items-end">
-                           <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/5 text-right w-40">
-                            <div className="flex items-center justify-end gap-2 text-white/50 text-[10px] uppercase font-bold mb-1">
-                              Total Load <Activity size={12} />
-                            </div>
-                            <div className={`text-4xl font-light transition-colors duration-300 ${liveStats.load > liveStats.maxLoad * 0.9 ? 'text-red-500' : 'text-[#00A0E9]'}`}>
-                              {liveStats.load}<span className="text-lg ml-1 text-white/50">ton</span>
-                            </div>
-                            <div className="text-[10px] text-white/40 mt-1">Max Capacity: {liveStats.maxLoad}t</div>
-                            <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
-                              <div 
-                                className={`h-full transition-all duration-500 ${liveStats.load > liveStats.maxLoad * 0.9 ? 'bg-red-500' : 'bg-[#00A0E9]'}`} 
-                                style={{ width: `${(liveStats.load / liveStats.maxLoad) * 100}%` }}
-                              ></div>
-                            </div>
+                  {/* Mode 3: REPORT */}
+                  {activeMode === 'report' && (
+                       <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col p-6 animate-in slide-in-from-right overflow-y-auto">
+                          <div className="flex justify-between items-center mb-8 mt-10">
+                             <h2 className="text-2xl font-light text-white">작업 리포트</h2>
+                             <button onClick={() => setActiveMode('inspect')} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center">✕</button>
                           </div>
-                        </div>
-
-                        {liveStats.sway > 1.6 && (
-                           <div className="absolute top-24 left-6 right-6 z-40 animate-[slideDown_0.5s_ease-out]">
-                              <div className="bg-red-500/90 backdrop-blur-xl p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/10">
-                                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                                  <AlertTriangle className="text-white" size={24} />
+                          {reportData ? (
+                              <div className="space-y-6 pb-24">
+                                <div className="bg-gradient-to-br from-[#00A0E9] to-[#0077b6] p-8 rounded-[32px] mb-6 shadow-2xl relative overflow-hidden">
+                                   <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+                                   <p className="text-white/80 font-medium mb-1">안전 숙련도 점수</p>
+                                   <div className="flex items-baseline gap-1">
+                                      <span className="text-5xl font-bold">{reportData.score}</span>
+                                      <span className="text-xl text-white/60">/100</span>
+                                   </div>
+                                   <p className="text-xs text-white/50 mt-2 text-right">측정 시간: {reportData.date}</p>
                                 </div>
-                                <div className="flex-1">
-                                  <h3 className="text-white font-bold text-sm">급조작 경고 (Sway Warning)</h3>
-                                  <p className="text-white/80 text-xs mt-0.5">인양물 흔들림 과다. 레버 조작을 멈추세요.</p>
+                                <div className="bg-white/5 rounded-[24px] p-6 border border-white/5">
+                                   <div className="flex items-center gap-2 mb-4 text-[#00A0E9] font-bold text-sm"><Activity size={16}/> 시스템 기본 분석</div>
+                                   <p className="text-sm text-white/90 leading-relaxed font-medium">{reportData.comment}</p>
+                                   <div className="mt-4 flex gap-2">
+                                       <span className="bg-black/30 px-3 py-1 rounded-lg text-xs text-white/60">급조작 {Math.floor(reportData.swayCount)}회</span>
+                                       <span className="bg-black/30 px-3 py-1 rounded-lg text-xs text-white/60">풍속 {reportData.stats.wind}m/s</span>
+                                   </div>
+                                </div>
+                                <div className="bg-gradient-to-b from-[#00A0E9]/10 to-transparent rounded-[24px] p-6 border border-[#00A0E9]/20">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-2 text-white font-bold text-sm">
+                                            <Sparkles size={16} className="text-[#00A0E9]" /> Gemini AI 정밀 분석
+                                        </div>
+                                        {!aiReportAnalysis && !isGeneratingReport && (
+                                            <button onClick={generateAIReport} className="text-[10px] bg-[#00A0E9] px-3 py-1.5 rounded-full font-bold shadow-lg active:scale-95 transition-transform">분석 시작</button>
+                                        )}
+                                    </div>
+                                    {isGeneratingReport ? (
+                                        <div className="flex flex-col items-center py-4 gap-3">
+                                            <div className="w-6 h-6 border-2 border-[#00A0E9] border-t-transparent rounded-full animate-spin"></div>
+                                            <p className="text-xs text-[#00A0E9] animate-pulse">Gemini가 리포트를 분석 중입니다...</p>
+                                        </div>
+                                    ) : aiReportAnalysis ? (
+                                        <div className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap animate-in fade-in">{aiReportAnalysis}</div>
+                                    ) : (
+                                        <p className="text-xs text-white/40">버튼을 눌러 작업 내용에 대한 AI의 상세 피드백을 받아보세요.</p>
+                                    )}
                                 </div>
                               </div>
-                           </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
+                          ) : (
+                              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60">
+                                  <FileX size={48} className="text-white/40 mb-4"/>
+                                  <p className="text-lg font-bold">작업 이력이 없습니다</p>
+                                  <p className="text-xs text-white/60 mt-2">'작업(Live)' 모드에서 안전 관제를 진행하면<br/>자동으로 리포트가 생성됩니다.</p>
+                                  <button onClick={() => setActiveMode('operate')} className="mt-8 px-6 py-3 bg-white/10 rounded-full text-xs font-bold hover:bg-white/20">작업 모드로 이동</button>
+                              </div>
+                          )}
+                       </div>
+                  )}
 
-                {/* Detail Popup */}
-                {step === 'inspection' && selectedPoint && (
-                  <>
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-30" onClick={() => setStep('mapping')} />
-                    <div className="absolute bottom-0 left-0 right-0 bg-[#1c1c1e] rounded-t-[32px] p-8 z-40 animate-[slideUp_0.4s_ease-out] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-                      <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-8"></div>
-                      
-                      <div className="flex justify-between items-start mb-8">
-                        <div>
-                          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-3 ${selectedPoint.status === 'danger' ? 'bg-red-500/20 text-red-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                            {selectedPoint.status === 'danger' ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
-                            {selectedPoint.status === 'danger' ? 'Critical Issue' : 'Safe Condition'}
+                  {/* Mode 4: AI CHAT */}
+                  {activeMode === 'chat' && (
+                      <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col pt-safe animate-in slide-in-from-right z-40">
+                          {/* ... (AI Chat Code same as before) ... */}
+                          <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black/50">
+                              <div className="flex items-center gap-2">
+                                  <div className="p-2 bg-[#00A0E9]/20 rounded-full"><Sparkles size={18} className="text-[#00A0E9]"/></div>
+                                  <div><h2 className="text-sm font-bold text-white">AI 안전 비서</h2><p className="text-[10px] text-white/50">Powered by Gemini 1.5</p></div>
+                              </div>
+                              <button onClick={() => setActiveMode('inspect')} className="p-2 rounded-full hover:bg-white/10"><FileX size={18} className="text-white/60"/></button>
                           </div>
-                          <h2 className="text-3xl font-light text-white">{selectedPoint.name}</h2>
-                        </div>
-                        <button onClick={() => setStep('mapping')} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
-                          <ChevronRight className="rotate-90 text-white/60" />
-                        </button>
-                      </div>
-
-                      {isAnalyzing ? (
-                        <div className="h-40 flex flex-col items-center justify-center space-y-4">
-                          <div className="w-8 h-8 border-t-2 border-[#00A0E9] rounded-full animate-spin"></div>
-                          <p className="text-sm text-[#00A0E9] animate-pulse">AI Analysing based on KOSHA...</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                              <p className="text-xs text-white/40 uppercase font-bold mb-1">Detected Issue</p>
-                              <p className="text-white font-medium">{selectedPoint.issue}</p>
-                            </div>
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                              <p className="text-xs text-white/40 uppercase font-bold mb-1">Legal Code</p>
-                              <p className="text-white font-medium">{selectedPoint.law}</p>
-                            </div>
+                          <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+                              {messages.map((msg, idx) => (
+                                  <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} msg-anim`}>
+                                      <div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-[#00A0E9] text-white rounded-br-none' : 'bg-white/10 text-white/90 rounded-bl-none border border-white/5'}`}>{msg.text}</div>
+                                  </div>
+                              ))}
+                              {isAiThinking && (<div className="flex justify-start msg-anim"><div className="bg-white/5 px-4 py-3 rounded-2xl rounded-bl-none flex gap-1 items-center border border-white/5"><div className="w-1.5 h-1.5 bg-[#00A0E9] rounded-full animate-bounce"></div><div className="w-1.5 h-1.5 bg-[#00A0E9] rounded-full animate-bounce delay-100"></div><div className="w-1.5 h-1.5 bg-[#00A0E9] rounded-full animate-bounce delay-200"></div></div></div>)}
+                              <div ref={chatEndRef}></div>
                           </div>
-
-                          <div className="p-4 rounded-2xl bg-[#00A0E9]/10 border border-[#00A0E9]/20 flex gap-3">
-                            <Info className="text-[#00A0E9] shrink-0" size={20} />
-                            <p className="text-xs text-[#00A0E9] leading-relaxed">
-                              POSCO 안전 가이드: 해당 결함은 즉시 작업 중단 사유에 해당합니다. 관리자에게 자동 보고됩니다.
-                            </p>
+                          <div className="p-4 pb-safe-bottom bg-black border-t border-white/10">
+                              <div className="flex gap-2 items-center bg-white/10 p-1.5 rounded-full border border-white/10 pl-4 focus-within:border-[#00A0E9] transition-colors">
+                                  <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="안전 규정이나 장비에 대해 물어보세요..." className="flex-1 bg-transparent text-sm text-white placeholder-white/40 focus:outline-none"/>
+                                  <button onClick={handleSendMessage} disabled={!chatInput.trim() || isAiThinking} className={`p-2.5 rounded-full transition-all ${chatInput.trim() ? 'bg-[#00A0E9] text-white' : 'bg-white/5 text-white/20'}`}><Send size={16} /></button>
+                              </div>
                           </div>
-
-                          <button 
-                            onClick={() => switchMode('operate')}
-                            className="w-full py-4 bg-white text-black rounded-2xl font-bold text-sm shadow-xl active:scale-95 transition-transform"
-                          >
-                            확인 및 작업 모드 전환
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* Coaching / Report */}
-                {step === 'coaching' && (
-                   <div className="absolute inset-0 bg-[#000] z-50 flex flex-col p-6 animate-in slide-in-from-right">
-                      <div className="flex justify-between items-center mb-10 mt-4">
-                         <h2 className="text-2xl font-light">Daily Report</h2>
-                         <button onClick={() => setStep('scan')} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center">✕</button>
                       </div>
+                  )}
 
-                      <div className="bg-gradient-to-br from-[#00A0E9] to-[#0077b6] p-8 rounded-[32px] mb-6 shadow-2xl relative overflow-hidden">
-                         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
-                         <p className="text-white/80 font-medium mb-1">Safety Proficiency</p>
-                         <div className="flex items-baseline gap-1">
-                            <span className="text-5xl font-bold">88</span>
-                            <span className="text-xl text-white/60">/100</span>
-                         </div>
-                         <div className="mt-6 flex gap-4">
-                            <div className="px-3 py-1 bg-black/20 rounded-lg text-xs backdrop-blur-sm">Sway Control: A</div>
-                            <div className="px-3 py-1 bg-black/20 rounded-lg text-xs backdrop-blur-sm">Load Stability: B+</div>
-                         </div>
-                      </div>
-
-                      <div className="flex-1 bg-white/5 rounded-[32px] p-6 border border-white/5">
-                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-medium text-white/90">Work Pattern</h3>
-                            <BarChart3 className="text-white/40" size={20} />
-                         </div>
-                         <div className="flex items-end justify-between h-40 gap-2">
-                            {[40, 70, 50, 90, 60, 30, 80].map((h, i) => (
-                               <div key={i} className="w-full bg-white/10 rounded-t-lg relative group overflow-hidden">
-                                  <div 
-                                    className="absolute bottom-0 w-full bg-[#00A0E9] transition-all duration-1000" 
-                                    style={{ height: `${h}%`, opacity: i === 3 ? 1 : 0.5 }}
-                                  ></div>
-                               </div>
-                            ))}
-                         </div>
-                         <p className="mt-6 text-sm text-white/60 leading-relaxed">
-                            오후 2시 경 붐대 조작 속도가 평균 대비 다소 빨랐습니다. <span className="text-[#00A0E9]">부드러운 가속(Soft Start)</span>을 유지하면 점수가 향상됩니다.
-                         </p>
-                      </div>
-                      
-                      <button onClick={() => setStep('scan')} className="mt-6 w-full py-4 border border-white/20 rounded-2xl text-sm font-medium hover:bg-white/5 transition-colors">
-                         Close Report
-                      </button>
-                   </div>
-                )}
               </div>
 
-              {/* Bottom Navigation */}
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50">
-                <div className="flex items-center gap-1 bg-black/60 backdrop-blur-2xl p-1.5 rounded-full border border-white/10 shadow-2xl">
-                  {/* Scan Button */}
-                  <button 
-                    onClick={() => setStep('scan')}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${step === 'scan' ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
-                  >
-                    <Camera size={20} />
-                  </button>
-                  
-                  {/* Inspect Button */}
-                  <button 
-                    onClick={() => { setStep('mapping'); setActiveMode('inspect'); }}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${(step === 'mapping' || step === 'inspection') ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
-                  >
-                    <Eye size={20} />
-                  </button>
-                  
-                  {/* Operate Button */}
-                  <button 
-                    onClick={() => { setStep('operation'); setActiveMode('operate'); }}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${(step === 'operation') ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
-                  >
-                    <Activity size={20} />
-                  </button>
-                  
-                  {/* Coaching Button */}
-                   <button 
-                    onClick={() => setStep('coaching')}
-                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${step === 'coaching' ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
-                  >
-                    <BarChart3 size={20} />
-                  </button>
-                </div>
+              {/* Bottom Nav */}
+              <div className="absolute bottom-[calc(2rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-xl p-1.5 rounded-full border border-white/10 flex gap-1 shadow-2xl z-50">
+                  <NavBtn icon={<Eye size={20}/>} label="점검" active={activeMode === 'inspect'} onClick={() => setActiveMode('inspect')} />
+                  <NavBtn icon={<Activity size={20}/>} label="작업" active={activeMode === 'operate'} onClick={() => setActiveMode('operate')} />
+                  <NavBtn icon={<BarChart3 size={20}/>} label="리포트" active={activeMode === 'report'} onClick={goToReport} />
+                  <NavBtn icon={<MessageSquare size={20}/>} label="AI 비서" active={activeMode === 'chat'} onClick={() => setActiveMode('chat')} />
               </div>
             </div>
           );
         };
+
+        const NavBtn = ({ icon, label, active, onClick }) => (
+            <button onClick={onClick} className={`w-14 h-14 rounded-full flex flex-col items-center justify-center gap-0.5 transition-all ${active ? 'bg-white text-black' : 'text-white/50 hover:bg-white/10'}`}>
+                {icon}<span className="text-[11px] font-bold">{label}</span>
+            </button>
+        );
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
