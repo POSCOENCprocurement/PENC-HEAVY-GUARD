@@ -26,7 +26,7 @@
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom) + 5rem); } /* 하단 네비게이션 높이만큼 여백 확보 */
+        .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom) + 5rem); } 
         
         /* AR Grid Animation */
         .ar-grid {
@@ -38,40 +38,56 @@
             perspective: 500px;
             animation: gridMove 10s linear infinite;
         }
+        
+        .ar-circle {
+            border: 4px dashed rgba(0, 160, 233, 0.6);
+            border-radius: 50%;
+            transform-style: preserve-3d;
+            animation: pulse-border 2s infinite;
+        }
+
         @keyframes gridMove {
             0% { background-position: 0 0; }
             100% { background-position: 0 40px; }
         }
         
-        /* Chat Bubble Animation */
+        @keyframes pulse-border {
+            0% { border-color: rgba(0, 160, 233, 0.3); box-shadow: 0 0 0 0 rgba(0, 160, 233, 0.2); }
+            50% { border-color: rgba(0, 160, 233, 0.8); box-shadow: 0 0 20px 10px rgba(0, 160, 233, 0.1); }
+            100% { border-color: rgba(0, 160, 233, 0.3); box-shadow: 0 0 0 0 rgba(0, 160, 233, 0); }
+        }
+        
         @keyframes fadeInUp {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
         .msg-anim { animation: fadeInUp 0.3s ease-out forwards; }
         
-        /* Zoom Slider Customization */
+        /* Zoom Slider */
         input[type=range].zoom-slider {
             -webkit-appearance: none;
-            width: 100%;
+            width: 100px; 
+            height: 4px;
             background: transparent;
-        }
-        input[type=range].zoom-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 20px;
-            width: 20px;
-            border-radius: 50%;
-            background: #ffffff;
+            transform: rotate(-90deg);
+            transform-origin: center;
             cursor: pointer;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            margin-top: -8px;
         }
         input[type=range].zoom-slider::-webkit-slider-runnable-track {
             width: 100%;
             height: 4px;
-            cursor: pointer;
             background: rgba(255,255,255,0.3);
             border-radius: 2px;
+        }
+        input[type=range].zoom-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            margin-top: -7px; 
         }
     </style>
 </head>
@@ -81,7 +97,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
         
-        // --- Gemini API Call Function ---
+        // --- Gemini API ---
         async function callGeminiAPI(prompt, userKey) {
             if (!userKey) return "API 키가 등록되지 않았습니다. 설정에서 키를 등록해주세요.";
             try {
@@ -129,23 +145,27 @@
         const Key = (p) => <Icon {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Icon>;
         const X = (p) => <Icon {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></Icon>;
         const ZoomIn = (p) => <Icon {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></Icon>;
+        const Move = (p) => <Icon {...p}><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></Icon>;
+        const Truck = (p) => <Icon {...p}><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5"/><path d="M14 17h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></Icon>;
+        const Tractor = (p) => <Icon {...p}><path d="M3 4h9l1 7"/><path d="M4 11V4"/><path d="M8 10V4"/><path d="M18 5c-.6 0-1 .4-1 1v5.61l-3.23-1.61a.5.5 0 0 0-.46.88l3.69 1.83c.5.25 1 .75 1 1.29V17c0 .55-.45 1-1 1h-6c-.55 0-1-.45-1-1v-2"/><path d="M18 5a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-3"/><circle cx="7" cy="15" r="3"/></Icon>;
+        const ArrowDownToLine = (p) => <Icon {...p}><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></Icon>;
+        const Gauge = (p) => <Icon {...p}><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></Icon>;
 
         const App = () => {
           const [activeMode, setActiveMode] = useState('inspect'); 
           const [inspectionStep, setInspectionStep] = useState('init');
+          const [operateStep, setOperateStep] = useState('scan'); 
           
           const [cameraActive, setCameraActive] = useState(false);
           const [cameraError, setCameraError] = useState(null);
           const [simulationMode, setSimulationMode] = useState(false); 
           const [toastMsg, setToastMsg] = useState(null); 
           
-          // Camera Zoom State
           const [zoomLevel, setZoomLevel] = useState(1);
 
           const [selectedPoint, setSelectedPoint] = useState(null);
           const [diagnosisStatus, setDiagnosisStatus] = useState('ready');
           
-          // Inspection Points (Initially Empty)
           const [activePoints, setActivePoints] = useState([]);
           
           const [angle, setAngle] = useState(0); 
@@ -154,6 +174,13 @@
           const [load, setLoad] = useState(5.2); 
           const [wind, setWind] = useState(2.4); 
           const [motionScore, setMotionScore] = useState(0);
+          
+          // Equipment Type State
+          const [currentEquip, setCurrentEquip] = useState('crane'); 
+          const [isOperateScanning, setIsOperateScanning] = useState(false);
+
+          // Zone Settings
+          const [safeRadius, setSafeRadius] = useState(20); 
           
           const [reportData, setReportData] = useState(null);
           const [swayCount, setSwayCount] = useState(0); 
@@ -240,9 +267,38 @@
               }
           }, [messages, activeMode]);
 
+          const handleModeChange = (mode) => {
+              setActiveMode(mode);
+              // 작업 모드 진입 시 스캔 단계부터 시작하도록 리셋
+              if (mode === 'operate') {
+                  setOperateStep('scan'); 
+              }
+          };
+
+          const startOperateScan = () => {
+              setIsOperateScanning(true);
+              setTimeout(() => {
+                  // 장비 인식 시뮬레이션 (랜덤)
+                  const equips = ['crane', 'excavator', 'vehicle'];
+                  const detected = equips[Math.floor(Math.random() * equips.length)];
+                  setCurrentEquip(detected);
+                  
+                  let equipName = '';
+                  if(detected === 'crane') equipName = '크레인/항타기';
+                  else if(detected === 'excavator') equipName = '굴삭기';
+                  else equipName = '덤프/차량';
+                  
+                  setToastMsg(`${equipName} 식별 완료.`);
+                  setTimeout(() => setToastMsg(null), 3000);
+                  
+                  setIsOperateScanning(false);
+                  setOperateStep('setup'); // 구역 설정 단계로 이동
+              }, 2000);
+          };
+
           const processVideo = () => {
               if (simulationMode) {
-                  if (activeMode === 'operate') {
+                  if (activeMode === 'operate' && operateStep === 'active') {
                       setMotionScore(prev => {
                           const noise = Math.random() * 0.5;
                           if (Math.random() > 0.95) return 20; 
@@ -270,7 +326,7 @@
                       for (let i = 0; i < data.length; i += 4) { diff += Math.abs(data[i] - lastFrameData.current[i]); }
                       const score = diff / (width * height);
                       setMotionScore(prev => (prev * 0.8) + (score * 0.2)); 
-                      if (score > 15) setSwayCount(prev => prev + 0.05);
+                      if (score > 15 && activeMode === 'operate' && operateStep === 'active') setSwayCount(prev => prev + 0.05);
                   }
                   lastFrameData.current = data;
               } catch (e) {}
@@ -278,25 +334,25 @@
           };
 
           useEffect(() => {
-              if ((cameraActive || simulationMode) && activeMode === 'operate') {
+              if ((cameraActive || simulationMode)) {
                   requestRef.current = requestAnimationFrame(processVideo);
               } else {
                   if (requestRef.current) cancelAnimationFrame(requestRef.current);
               }
               return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-          }, [cameraActive, activeMode, simulationMode, motionScore]);
+          }, [cameraActive, activeMode, simulationMode, motionScore, operateStep]);
 
           const goToReport = () => {
               if (activeMode === 'operate') {
                   const finalSway = Math.floor(swayCount);
                   const safetyScore = Math.max(0, 100 - (finalSway * 5)); 
                   let comment = "안전하게 작업이 완료되었습니다.";
-                  if (finalSway > 5) comment = "급조작이 다수 감지되었습니다. 붐대 선회 속도를 줄이십시오.";
-                  else if (finalSway > 2) comment = "약간의 흔들림이 있었습니다. 조금 더 부드러운 조작이 필요합니다.";
+                  if (finalSway > 5) comment = "급조작이 다수 감지되었습니다. 주의가 필요합니다.";
+                  else if (finalSway > 2) comment = "약간의 흔들림이 있었습니다.";
 
                   setReportData({
                       score: safetyScore, swayCount: finalSway, comment: comment,
-                      date: new Date().toLocaleTimeString(), stats: { wind, load, boomLength }
+                      date: new Date().toLocaleTimeString(), stats: { wind, load, boomLength, equip: currentEquip }
                   });
               }
               setActiveMode('report');
@@ -323,7 +379,7 @@
               if (!reportData) return;
               if (!apiKey) { setToastMsg("API 키 등록이 필요합니다."); setIsKeyModalOpen(true); return; }
               setIsGeneratingReport(true);
-              const prompt = `건설 현장 작업 로그: 안전점수 ${reportData.score}점, 급조작 ${reportData.swayCount}회, 풍속 ${reportData.stats.wind}m/s. 안전 리포트 작성해줘.`;
+              const prompt = `건설 현장 작업 로그 (${reportData.stats.equip}): 안전점수 ${reportData.score}점, 급조작 ${reportData.swayCount}회. 안전 리포트 작성해줘.`;
               const analysis = await callGeminiAPI(prompt, apiKey);
               setAiReportAnalysis(analysis);
               setIsGeneratingReport(false);
@@ -335,15 +391,13 @@
               return Math.max(0, r).toFixed(1);
           }, [angle, boomLength]);
 
-          // Scan Logic
           const startScan = () => {
               setInspectionStep('scanning');
               setTimeout(() => { 
                   setInspectionStep('mapped'); 
-                  // Populate points only after scan
                   setActivePoints([
-                    { id: 1, name: '와이어로프 (Wire Rope)', top: '40%', left: '50%', status: 'danger', issue: '소선 단선 (12%) 감지됨', criteria: '산안법 제63조: 이음매 발생, 소선 10% 이상 단선, 지름 7% 초과 감소 시 사용 금지' },
-                    { id: 2, name: '훅 블록 (Hook Block)', top: '60%', left: '45%', status: 'warning', issue: '안전래치 마모 및 유격', criteria: 'KOSHA 가이드: 훅의 입구가 변형되거나 안전래치가 정상 복귀되지 않을 시 교체' },
+                    { id: 1, name: '주요 부품 (Main Part)', top: '40%', left: '50%', status: 'danger', issue: '미세 균열 감지됨', criteria: '안전보건규칙 제63조' },
+                    { id: 2, name: '유압 실린더 (Cylinder)', top: '60%', left: '45%', status: 'warning', issue: '누유 의심', criteria: '제조사 매뉴얼 점검 기준' },
                   ]);
               }, 2000);
           };
@@ -361,6 +415,41 @@
               }, 3000);
           };
           const enableSimulation = () => { setSimulationMode(true); setCameraError(null); };
+          const confirmZone = () => {
+              setOperateStep('active');
+              const equipName = currentEquip === 'crane' ? '크레인' : currentEquip === 'excavator' ? '굴삭기' : '차량';
+              setToastMsg(`${equipName} 작업 반경 ${safeRadius}m 설정 완료.`);
+              setTimeout(() => setToastMsg(null), 3000);
+          };
+
+          // Render Different HUD based on Equipment Type
+          const renderMeasurePanel = () => {
+              if (currentEquip === 'crane') {
+                  return (
+                      <>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase mb-2"><span className="flex items-center gap-1 text-[#00A0E9]"><Ruler size={10}/> 붐 길이 (AI)</span><span className="text-white text-lg">{boomLength}m</span></div>{isMeasuringBoom ? (<div className="h-8 bg-black/40 rounded-lg flex items-center justify-center border border-[#00A0E9] animate-pulse"><span className="text-[10px] text-[#00A0E9] font-bold">Measuring...</span></div>) : (<button onClick={measureBoom} className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border border-white/10"><Maximize size={10}/> 붐 길이 측정</button>)}</div>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Scale size={10}/> 추정 하중</span><span className="text-white">{load}t</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-green-500 h-full" style={{width: '40%'}}></div></div></div>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Wind size={10}/> 현장 풍속</span><span>{wind}m/s</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-blue-400 h-full" style={{width: '20%'}}></div></div></div>
+                      </>
+                  );
+              } else if (currentEquip === 'excavator') {
+                  return (
+                      <>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase mb-2"><span className="flex items-center gap-1 text-yellow-500"><ArrowDownToLine size={10}/> 굴착 깊이</span><span className="text-white text-lg">3.5m</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-yellow-500 h-full" style={{width: '60%'}}></div></div></div>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Scale size={10}/> 버킷 하중</span><span className="text-white">0.8m³</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-orange-500 h-full" style={{width: '70%'}}></div></div></div>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Activity size={10}/> 선회 속도</span><span>12rpm</span></div></div>
+                      </>
+                  );
+              } else if (currentEquip === 'vehicle') {
+                  return (
+                      <>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase mb-2"><span className="flex items-center gap-1 text-green-400"><Gauge size={10}/> 이동 속도</span><span className="text-white text-lg">15km/h</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-green-500 h-full" style={{width: '30%'}}></div></div></div>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Maximize size={10}/> 전방 거리</span><span className="text-red-400">4.2m</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-red-500 h-full" style={{width: '20%'}}></div></div></div>
+                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Scale size={10}/> 적재 중량</span><span>24t</span></div></div>
+                      </>
+                  );
+              }
+          };
 
           return (
             <div className="flex flex-col h-[100dvh] bg-black text-white overflow-hidden relative safe-pb">
@@ -383,16 +472,29 @@
                   </div>
               )}
 
+              {/* Equipment Rescan Button (Operate Mode Only - Active Step) */}
+              {activeMode === 'operate' && operateStep === 'active' && (
+                  <div className="absolute top-20 right-4 z-50">
+                      <button 
+                          onClick={startOperateScan}
+                          className="bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/10 shadow-lg text-xs flex items-center gap-1 px-3"
+                      >
+                          <RefreshCw size={12} className="text-white/70"/> 
+                          <span className="text-white/80 font-bold">{currentEquip === 'crane' ? '크레인' : currentEquip === 'excavator' ? '굴삭기' : '차량'}</span>
+                      </button>
+                  </div>
+              )}
+
               {/* Header */}
-              <div className="absolute top-0 w-full p-4 pt-safe z-50 bg-gradient-to-b from-black/90 to-transparent flex justify-between items-center">
-                  <div className="flex items-center gap-2">
+              <div className="absolute top-0 w-full p-4 pt-safe z-50 bg-gradient-to-b from-black/90 to-transparent flex justify-between items-center pointer-events-none">
+                  <div className="flex items-center gap-2 pointer-events-auto">
                       <div className="w-2 h-2 rounded-full bg-[#00A0E9] shadow-[0_0_8px_#00A0E9]"></div>
                       <h1 className="text-sm font-bold tracking-wider">HeavyGuard <span className="text-[#00A0E9]">AI</span></h1>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 pointer-events-auto">
                       <div className="bg-white/10 px-3 py-1 rounded-full border border-white/5 backdrop-blur-md flex items-center gap-2">
                           <span className="text-[10px] uppercase font-bold text-white/80">
-                              {simulationMode ? 'Simulation' : (activeMode === 'operate' ? 'Live Sensing' : activeMode === 'inspect' ? 'AI Inspection' : activeMode === 'chat' ? 'Safety Chat' : 'Report')}
+                              {simulationMode ? 'Simulation' : (activeMode === 'operate' ? (operateStep === 'scan' ? 'AI Scan' : operateStep === 'setup' ? 'Zone Setup' : 'Live Sensing') : activeMode === 'inspect' ? 'AI Inspection' : activeMode === 'chat' ? 'Safety Chat' : 'Report')}
                           </span>
                           {isIOS && activeMode === 'operate' && !simulationMode && <span className="text-[8px] bg-[#00A0E9] text-white px-1.5 py-0.5 rounded font-bold tracking-tighter">LiDAR</span>}
                       </div>
@@ -409,25 +511,24 @@
                       <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover opacity-80" style={{ transform: `scale(${zoomLevel})` }}></video>
                   )}
                   
-                  {/* Zoom Slider (Only visible when camera is active) */}
-                  {!simulationMode && !cameraError && (
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 h-40 bg-black/40 backdrop-blur-md rounded-full w-8 border border-white/10 flex flex-col items-center justify-center z-40 py-4 gap-2">
-                          <ZoomIn size={12} className="text-white/60"/>
-                          <div className="h-full w-full flex items-center justify-center">
+                  {/* Zoom Slider */}
+                  {!simulationMode && !cameraError && activeMode !== 'chat' && activeMode !== 'report' && (
+                      <div className="absolute right-6 top-1/2 -translate-y-1/2 h-44 bg-black/40 backdrop-blur-md rounded-full w-10 border border-white/10 flex flex-col items-center justify-between z-40 py-4 shadow-lg">
+                          <div className="text-white/80 font-bold text-[10px] pointer-events-none">Zoom</div>
+                          <div className="flex-1 flex items-center justify-center w-full">
                               <input 
                                   type="range" 
                                   min="1" max="3" step="0.1" 
                                   value={zoomLevel} 
                                   onChange={(e) => setZoomLevel(e.target.value)}
-                                  className="zoom-slider h-24 w-1 bg-white/20 rounded appearance-none"
-                                  style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' }}
+                                  className="zoom-slider bg-white/20 rounded appearance-none"
                               />
                           </div>
-                          <span className="text-[9px] font-bold text-white/80">{zoomLevel}x</span>
+                          <span className="text-[9px] font-bold text-white/90 font-mono pointer-events-none">{zoomLevel}x</span>
                       </div>
                   )}
 
-                  {toastMsg && <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-white/90 text-black px-4 py-2 rounded-full text-xs font-bold shadow-xl z-[60] animate-in fade-in slide-in-from-top-2 whitespace-nowrap">{toastMsg}</div>}
+                  {toastMsg && <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-white/90 text-black px-4 py-2 rounded-full text-xs font-bold shadow-xl z-[60] animate-in fade-in slide-in-from-top-2 whitespace-nowrap pointer-events-none">{toastMsg}</div>}
                   
                   {cameraError && !simulationMode && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-50 p-6 text-center animate-in fade-in">
@@ -441,13 +542,7 @@
                       </div>
                   )}
                   
-                  {activeMode === 'operate' && (cameraActive || simulationMode) && (
-                      <div className="absolute bottom-0 w-full h-1/2 overflow-hidden pointer-events-none opacity-40">
-                          <div className="ar-grid w-full h-full origin-bottom" style={{ transform: `rotateX(60deg) scale(${1 + radius/50})` }}></div>
-                          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-[#00A0E9] font-bold tracking-widest uppercase">Safe Zone: {radius}m Radius</div>
-                      </div>
-                  )}
-
+                  {/* Mode 1: INSPECT */}
                   {activeMode === 'inspect' && !cameraError && (
                       <div className="absolute inset-0 pb-24">
                           {inspectionStep === 'init' && (
@@ -473,32 +568,104 @@
                                       <div className="flex items-start justify-between mb-6"><div><span className="text-[#00A0E9] text-[10px] font-bold tracking-widest uppercase mb-1 block">Component Inspection</span><h3 className="text-2xl font-bold text-white">{selectedPoint.name}</h3></div><div className="p-3 bg-white/5 rounded-full border border-white/10"><Target size={20} className="text-white/80"/></div></div>
                                       {diagnosisStatus === 'ready' && (<div className="space-y-4"><div className="bg-white/5 p-5 rounded-2xl border border-white/5"><div className="flex items-center gap-2 mb-2 text-white/60"><ShieldCheck size={14} /><span className="text-xs font-bold uppercase">Safety Criteria (점검 기준)</span></div><p className="text-sm leading-relaxed font-medium text-white/90 break-keep">"{selectedPoint.criteria}"</p></div><button onClick={startDiagnosis} className="w-full py-4 bg-[#00A0E9] text-white font-bold rounded-2xl active:scale-95 transition-transform shadow-lg flex items-center justify-center gap-2"><Zap size={18} fill="currentColor"/> AI 정밀 진단 시작</button></div>)}
                                       {diagnosisStatus === 'analyzing' && (<div className="py-10 flex flex-col items-center justify-center space-y-4"><div className="w-12 h-12 border-4 border-[#00A0E9] border-t-transparent rounded-full animate-spin"></div><p className="text-sm font-bold text-[#00A0E9] animate-pulse">이미지 정밀 분석 중...</p></div>)}
-                                      {diagnosisStatus === 'done' && (<div className="space-y-4 animate-[slideInRight_0.3s_ease-out]"><div className={`p-5 rounded-2xl border flex items-center gap-4 ${selectedPoint.status === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-yellow-500/10 border-yellow-500/30'}`}><div className={`p-3 rounded-full ${selectedPoint.status === 'danger' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'}`}><AlertTriangle size={24} /></div><div><p className={`text-xs font-bold uppercase ${selectedPoint.status === 'danger' ? 'text-red-400' : 'text-yellow-400'}`}>AI Diagnosis Result</p><p className="text-lg font-bold text-white">{selectedPoint.issue}</p></div></div><div className="flex gap-3"><button onClick={() => setSelectedPoint(null)} className="flex-1 py-4 bg-white/10 text-white font-bold rounded-2xl">닫기</button><button onClick={() => setActiveMode('operate')} className="flex-1 py-4 bg-white text-black font-bold rounded-2xl shadow-lg">작업 모드로 이동</button></div></div>)}
+                                      {diagnosisStatus === 'done' && (<div className="space-y-4 animate-[slideInRight_0.3s_ease-out]"><div className={`p-5 rounded-2xl border flex items-center gap-4 ${selectedPoint.status === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-yellow-500/10 border-yellow-500/30'}`}><div className={`p-3 rounded-full ${selectedPoint.status === 'danger' ? 'bg-red-500 text-white' : 'bg-yellow-500 text-black'}`}><AlertTriangle size={24} /></div><div><p className={`text-xs font-bold uppercase ${selectedPoint.status === 'danger' ? 'text-red-400' : 'text-yellow-400'}`}>AI Diagnosis Result</p><p className="text-lg font-bold text-white">{selectedPoint.issue}</p></div></div><div className="flex gap-3"><button onClick={() => setSelectedPoint(null)} className="flex-1 py-4 bg-white/10 text-white font-bold rounded-2xl">닫기</button><button onClick={() => handleModeChange('operate')} className="flex-1 py-4 bg-white text-black font-bold rounded-2xl shadow-lg">작업 모드로 이동</button></div></div>)}
                                   </div>
                               </div>
                           )}
                       </div>
                   )}
 
+                  {/* Mode 2: OPERATE */}
                   {activeMode === 'operate' && (cameraActive || simulationMode) && (
                       <div className="absolute inset-0 pb-24 pointer-events-none">
-                          <div className="absolute top-24 left-4 pointer-events-auto">
-                              <div className="bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 w-40 mb-2"><div className="flex items-center gap-2 mb-1 opacity-70"><Activity size={12} className="text-[#00A0E9]" /><span className="text-[10px] font-bold uppercase">붐 각도</span></div><div className="text-3xl font-light tracking-tighter">{angle}°</div></div>
-                              <div className="bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 w-40"><div className="flex items-center gap-2 mb-1 opacity-70"><Ruler size={12} className="text-green-400" /><span className="text-[10px] font-bold uppercase">작업 반경</span></div><div className="text-3xl font-light tracking-tighter text-green-400">{radius}m</div><div className="text-[9px] text-white/40 mt-1 flex items-center gap-1"><Scale size={9}/> AR Calculation</div></div>
-                          </div>
-                          <div className="absolute top-24 right-4 pointer-events-auto space-y-2">
-                              <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase mb-2"><span className="flex items-center gap-1 text-[#00A0E9]"><Ruler size={10}/> 붐 길이 (AI)</span><span className="text-white text-lg">{boomLength}m</span></div>{isMeasuringBoom ? (<div className="h-8 bg-black/40 rounded-lg flex items-center justify-center border border-[#00A0E9] animate-pulse"><span className="text-[10px] text-[#00A0E9] font-bold">Measuring...</span></div>) : (<button onClick={measureBoom} className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 border border-white/10"><Maximize size={10}/> 붐 길이 측정</button>)}</div>
-                              <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Scale size={10}/> 추정 하중</span><span className="text-white">{load}t</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-green-500 h-full" style={{width: '40%'}}></div></div></div>
-                              <div className="bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 w-44"><div className="flex justify-between text-[10px] font-bold uppercase"><span className="flex items-center gap-1"><Wind size={10}/> 현장 풍속</span><span>{wind}m/s</span></div><div className="w-full bg-white/10 h-1 mt-2 rounded-full overflow-hidden"><div className="bg-blue-400 h-full" style={{width: '20%'}}></div></div></div>
-                          </div>
-                          {isMeasuringBoom && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none">{isIOS && !simulationMode ? (<div className="w-full h-full flex items-center justify-center relative"><div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(0,160,233,0.2)_1px,_transparent_1px)] bg-[length:20px_20px] animate-pulse opacity-50"></div><div className="relative w-72 h-72 border-2 border-[#00A0E9] rounded-lg flex items-center justify-center"><ScanLine size={300} className="text-[#00A0E9]/30 absolute animate-pulse"/><p className="absolute -bottom-10 text-xs font-bold text-[#00A0E9] bg-black/60 px-3 py-1 rounded-full border border-[#00A0E9]/30">LiDAR Precision Scan Active</p></div></div>) : (<div className="relative w-64 h-64 border border-[#00A0E9]/50 rounded-lg flex items-center justify-center"><div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#00A0E9]"></div><div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#00A0E9]"></div><div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#00A0E9]"></div><div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#00A0E9]"></div><div className="w-2 h-2 bg-[#00A0E9] rounded-full animate-ping"></div><p className="absolute -bottom-8 text-xs font-bold text-[#00A0E9] bg-black/50 px-2 py-1 rounded">붐 끝단을 중앙에 맞추세요</p></div>)}</div>)}
-                          <div className="absolute bottom-36 left-6 right-6"><div className="bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10 p-4"><div className="flex justify-between items-center mb-2"><span className="text-[10px] font-bold uppercase flex items-center gap-2"><Eye size={12} className={motionScore > 10 ? "text-red-500" : "text-white"}/> AI 흔들림 감지</span><span className={`text-xs font-bold ${motionScore > 10 ? "text-red-500 animate-pulse" : "text-white/50"}`}>{motionScore > 10 ? "흔들림 감지됨" : "안정 상태"}</span></div><div className="h-2 w-full bg-white/10 rounded-full overflow-hidden flex items-center"><div className={`h-full transition-all duration-100 ${motionScore > 15 ? 'bg-red-500' : 'bg-[#00A0E9]'}`} style={{ width: `${Math.min(motionScore * 5, 100)}%` }}></div></div></div></div>
+                          {/* Step 0: Scan (Initial) */}
+                          {operateStep === 'scan' && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20 p-6 animate-in fade-in pointer-events-auto">
+                                  <div className="w-64 h-64 border-[1px] border-white/20 rounded-[40px] flex items-center justify-center relative overflow-hidden mb-6">
+                                      <div className="absolute inset-0 bg-gradient-to-b from-[#00A0E9]/0 via-[#00A0E9]/30 to-[#00A0E9]/0 animate-[scan_2s_infinite]"></div>
+                                      <Target size={48} className="text-white/40" />
+                                  </div>
+                                  
+                                  <div className="text-center">
+                                      {isOperateScanning ? (
+                                          <div className="space-y-4">
+                                              <div className="w-12 h-12 border-4 border-[#00A0E9] border-t-transparent rounded-full animate-spin mx-auto"></div>
+                                              <p className="text-sm font-bold text-[#00A0E9] animate-pulse">AI가 작업 장비를 식별 중입니다...</p>
+                                          </div>
+                                      ) : (
+                                          <div className="space-y-4">
+                                              <div>
+                                                  <h2 className="text-xl font-light mb-1">작업 장비 스캔</h2>
+                                                  <p className="text-xs text-white/60">작업할 장비를 비추면 AI가 자동으로 식별합니다.</p>
+                                              </div>
+                                              <button 
+                                                  onClick={startOperateScan}
+                                                  className="bg-[#00A0E9] hover:bg-[#008AC9] text-white px-8 py-3 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 w-full max-w-[200px] mx-auto"
+                                              >
+                                                  <Search size={16}/> 장비 스캔 시작
+                                              </button>
+                                          </div>
+                                      )}
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* Step 1: Zone Setup */}
+                          {operateStep === 'setup' && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20 p-6 animate-in fade-in pointer-events-auto">
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-80">
+                                      <div className="ar-circle" style={{ width: `${Math.min(safeRadius * 10, 300)}px`, height: `${Math.min(safeRadius * 10, 300)}px` }}></div>
+                                      <div className="absolute text-[#00A0E9] font-bold text-sm bg-black/50 px-2 py-1 rounded">R: {safeRadius}m</div>
+                                  </div>
+                                  <div className="absolute bottom-32 w-full max-w-sm bg-[#1c1c1e] p-6 rounded-[2rem] border border-white/10 shadow-2xl">
+                                      <div className="flex items-center gap-3 mb-6">
+                                          <div className="p-3 bg-[#00A0E9]/20 rounded-full text-[#00A0E9]"><Move size={20}/></div>
+                                          <div><h3 className="text-lg font-bold text-white">작업 구역 설정 (AR)</h3><p className="text-xs text-white/50">안전 작업 반경을 설정해주세요.</p></div>
+                                      </div>
+                                      <div className="mb-6"><div className="flex justify-between text-xs font-bold text-white/80 mb-2"><span>반경 (Radius)</span><span className="text-[#00A0E9]">{safeRadius}m</span></div><input type="range" min="5" max="50" step="1" value={safeRadius} onChange={(e) => setSafeRadius(e.target.value)} className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[#00A0E9]"/></div>
+                                      <button onClick={confirmZone} className="w-full py-4 bg-[#00A0E9] text-white font-bold rounded-2xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"><CheckCircle size={18}/> 설정 완료 및 작업 시작</button>
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* Step 2: Active Monitoring */}
+                          {operateStep === 'active' && (
+                              <div className="absolute inset-0 pointer-events-none">
+                                  <div className="absolute bottom-0 w-full h-1/2 overflow-hidden opacity-40">
+                                      <div className="ar-grid w-full h-full origin-bottom" style={{ transform: `rotateX(60deg) scale(${1 + safeRadius/50})` }}></div>
+                                      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[10px] text-[#00A0E9] font-bold tracking-widest uppercase">Safe Zone: {safeRadius}m Radius</div>
+                                  </div>
+                                  {parseFloat(radius) > safeRadius && (
+                                      <div className="absolute inset-0 border-[10px] border-red-500/50 animate-pulse z-10 flex items-center justify-center">
+                                          <div className="bg-red-500 text-white px-6 py-3 rounded-full font-bold shadow-xl flex items-center gap-2"><AlertTriangle size={24}/> 경고: 작업 반경 이탈!</div>
+                                      </div>
+                                  )}
+                                  
+                                  {/* HUD: Left (Angle/Radius) - Crane Only or Common? */}
+                                  <div className="absolute top-24 left-4 pointer-events-auto">
+                                      <div className="bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 w-40 mb-2"><div className="flex items-center gap-2 mb-1 opacity-70"><Activity size={12} className="text-[#00A0E9]" /><span className="text-[10px] font-bold uppercase">붐 각도</span></div><div className="text-3xl font-light tracking-tighter">{angle}°</div></div>
+                                      <div className="bg-black/40 backdrop-blur-md p-4 rounded-2xl border border-white/10 w-40"><div className="flex items-center gap-2 mb-1 opacity-70"><Ruler size={12} className="text-green-400" /><span className="text-[10px] font-bold uppercase">작업 반경</span></div><div className={`text-3xl font-light tracking-tighter ${parseFloat(radius) > safeRadius ? 'text-red-500' : 'text-green-400'}`}>{radius}m</div><div className="text-[9px] text-white/40 mt-1 flex items-center gap-1"><Scale size={9}/> AR Calculation</div></div>
+                                  </div>
+                                  
+                                  {/* HUD: Right (Dynamic based on Equipment) */}
+                                  <div className="absolute top-24 right-4 pointer-events-auto space-y-2">
+                                      {renderMeasurePanel()}
+                                  </div>
+                                  
+                                  {/* LiDAR UI */}
+                                  {isMeasuringBoom && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none">{isIOS && !simulationMode ? (<div className="w-full h-full flex items-center justify-center relative"><div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(0,160,233,0.2)_1px,_transparent_1px)] bg-[length:20px_20px] animate-pulse opacity-50"></div><div className="relative w-72 h-72 border-2 border-[#00A0E9] rounded-lg flex items-center justify-center"><ScanLine size={300} className="text-[#00A0E9]/30 absolute animate-pulse"/><p className="absolute -bottom-10 text-xs font-bold text-[#00A0E9] bg-black/60 px-3 py-1 rounded-full border border-[#00A0E9]/30">LiDAR Precision Scan Active</p></div></div>) : (<div className="relative w-64 h-64 border border-[#00A0E9]/50 rounded-lg flex items-center justify-center"><div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#00A0E9]"></div><div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-[#00A0E9]"></div><div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-[#00A0E9]"></div><div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#00A0E9]"></div><div className="w-2 h-2 bg-[#00A0E9] rounded-full animate-ping"></div><p className="absolute -bottom-8 text-xs font-bold text-[#00A0E9] bg-black/50 px-2 py-1 rounded">붐 끝단을 중앙에 맞추세요</p></div>)}</div>)}
+                                  
+                                  {/* Sway Indicator */}
+                                  <div className="absolute bottom-36 left-6 right-6"><div className="bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10 p-4"><div className="flex justify-between items-center mb-2"><span className="text-[10px] font-bold uppercase flex items-center gap-2"><Eye size={12} className={motionScore > 10 ? "text-red-500" : "text-white"}/> AI 흔들림 감지</span><span className={`text-xs font-bold ${motionScore > 10 ? "text-red-500 animate-pulse" : "text-white/50"}`}>{motionScore > 10 ? "흔들림 감지됨" : "안정 상태"}</span></div><div className="h-2 w-full bg-white/10 rounded-full overflow-hidden flex items-center"><div className={`h-full transition-all duration-100 ${motionScore > 15 ? 'bg-red-500' : 'bg-[#00A0E9]'}`} style={{ width: `${Math.min(motionScore * 5, 100)}%` }}></div></div></div></div>
+                              </div>
+                          )}
                       </div>
                   )}
 
+                  {/* Mode 3: REPORT */}
                   {activeMode === 'report' && (
                        <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col p-6 animate-in slide-in-from-right overflow-y-auto pb-32">
-                          <div className="flex justify-between items-center mb-8 mt-10"><h2 className="text-2xl font-light text-white">작업 리포트</h2><button onClick={() => setActiveMode('inspect')} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center">✕</button></div>
+                          <div className="flex justify-between items-center mb-8 mt-10"><h2 className="text-2xl font-light text-white">작업 리포트</h2><button onClick={() => handleModeChange('inspect')} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center">✕</button></div>
                           {reportData ? (
                               <div className="space-y-6">
                                 <div className="bg-gradient-to-br from-[#00A0E9] to-[#0077b6] p-8 rounded-[32px] mb-6 shadow-2xl relative overflow-hidden"><div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div><p className="text-white/80 font-medium mb-1">안전 숙련도 점수</p><div className="flex items-baseline gap-1"><span className="text-5xl font-bold">{reportData.score}</span><span className="text-xl text-white/60">/100</span></div><p className="text-xs text-white/50 mt-2 text-right">측정 시간: {reportData.date}</p></div>
@@ -506,24 +673,24 @@
                                 <div className="bg-gradient-to-b from-[#00A0E9]/10 to-transparent rounded-[24px] p-6 border border-[#00A0E9]/20"><div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 text-white font-bold text-sm"><Sparkles size={16} className="text-[#00A0E9]" /> Gemini AI 정밀 분석</div>{!aiReportAnalysis && !isGeneratingReport && (<button onClick={generateAIReport} className="text-[10px] bg-[#00A0E9] px-3 py-1.5 rounded-full font-bold shadow-lg active:scale-95 transition-transform">분석 시작</button>)}</div>{isGeneratingReport ? (<div className="flex flex-col items-center py-4 gap-3"><div className="w-6 h-6 border-2 border-[#00A0E9] border-t-transparent rounded-full animate-spin"></div><p className="text-xs text-[#00A0E9] animate-pulse">Gemini가 리포트를 분석 중입니다...</p></div>) : aiReportAnalysis ? (<div className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap animate-in fade-in">{aiReportAnalysis}</div>) : (<p className="text-xs text-white/40">버튼을 눌러 작업 내용에 대한 AI의 상세 피드백을 받아보세요.</p>)}</div>
                               </div>
                           ) : (
-                              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60"><FileX size={48} className="text-white/40 mb-4"/><p className="text-lg font-bold">작업 이력이 없습니다</p><p className="text-xs text-white/60 mt-2">'작업(Live)' 모드에서 안전 관제를 진행하면<br/>자동으로 리포트가 생성됩니다.</p><button onClick={() => setActiveMode('operate')} className="mt-8 px-6 py-3 bg-white/10 rounded-full text-xs font-bold hover:bg-white/20">작업 모드로 이동</button></div>
+                              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-60"><FileX size={48} className="text-white/40 mb-4"/><p className="text-lg font-bold">작업 이력이 없습니다</p><p className="text-xs text-white/60 mt-2">'작업(Live)' 모드에서 안전 관제를 진행하면<br/>자동으로 리포트가 생성됩니다.</p><button onClick={() => handleModeChange('operate')} className="mt-8 px-6 py-3 bg-white/10 rounded-full text-xs font-bold hover:bg-white/20">작업 모드로 이동</button></div>
                           )}
                        </div>
                   )}
 
                   {/* Mode 4: AI CHAT */}
                   {activeMode === 'chat' && (
-                      <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col pt-safe animate-in slide-in-from-right z-40 pb-24">
+                      <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col pt-safe animate-in slide-in-from-right z-[60]">
                           <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black/50">
                               <div className="flex items-center gap-2"><div className="p-2 bg-[#00A0E9]/20 rounded-full"><Sparkles size={18} className="text-[#00A0E9]"/></div><div><h2 className="text-sm font-bold text-white">AI 안전 비서</h2><p className="text-[10px] text-white/50">Powered by Gemini 1.5</p></div></div>
-                              <button onClick={() => setActiveMode('inspect')} className="p-2 rounded-full hover:bg-white/10"><FileX size={18} className="text-white/60"/></button>
+                              <button onClick={() => handleModeChange('inspect')} className="p-2 rounded-full hover:bg-white/10"><FileX size={18} className="text-white/60"/></button>
                           </div>
                           <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
                               {messages.map((msg, idx) => (<div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} msg-anim`}><div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-[#00A0E9] text-white rounded-br-none' : 'bg-white/10 text-white/90 rounded-bl-none border border-white/5'}`}>{msg.text}</div></div>))}
                               {isAiThinking && (<div className="flex justify-start msg-anim"><div className="bg-white/5 px-4 py-3 rounded-2xl rounded-bl-none flex gap-1 items-center border border-white/5"><div className="w-1.5 h-1.5 bg-[#00A0E9] rounded-full animate-bounce"></div><div className="w-1.5 h-1.5 bg-[#00A0E9] rounded-full animate-bounce delay-100"></div><div className="w-1.5 h-1.5 bg-[#00A0E9] rounded-full animate-bounce delay-200"></div></div></div>)}
                               <div ref={chatEndRef}></div>
                           </div>
-                          <div className="p-4 bg-black border-t border-white/10">
+                          <div className="p-4 bg-black border-t border-white/10 safe-pb">
                               <div className="flex gap-2 items-center bg-white/10 p-1.5 rounded-full border border-white/10 pl-4 focus-within:border-[#00A0E9] transition-colors"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="안전 규정이나 장비에 대해 물어보세요..." className="flex-1 bg-transparent text-sm text-white placeholder-white/40 focus:outline-none"/><button onClick={handleSendMessage} disabled={!chatInput.trim() || isAiThinking} className={`p-2.5 rounded-full transition-all ${chatInput.trim() ? 'bg-[#00A0E9] text-white' : 'bg-white/5 text-white/20'}`}><Send size={16} /></button></div>
                           </div>
                       </div>
@@ -531,13 +698,15 @@
 
               </div>
 
-              {/* Bottom Nav */}
-              <div className="absolute bottom-[calc(2rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-xl p-1.5 rounded-full border border-white/10 flex gap-1 shadow-2xl z-50">
-                  <NavBtn icon={<Eye size={20}/>} label="점검" active={activeMode === 'inspect'} onClick={() => setActiveMode('inspect')} />
-                  <NavBtn icon={<Activity size={20}/>} label="작업" active={activeMode === 'operate'} onClick={() => setActiveMode('operate')} />
-                  <NavBtn icon={<BarChart3 size={20}/>} label="리포트" active={activeMode === 'report'} onClick={goToReport} />
-                  <NavBtn icon={<MessageSquare size={20}/>} label="AI 비서" active={activeMode === 'chat'} onClick={() => setActiveMode('chat')} />
-              </div>
+              {/* Bottom Nav: Safe Area applied, 4 Tabs - Hidden in Chat Mode */}
+              {activeMode !== 'chat' && (
+                <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-xl p-1.5 rounded-full border border-white/10 flex gap-1 shadow-2xl z-50">
+                    <NavBtn icon={<Eye size={20}/>} label="점검" active={activeMode === 'inspect'} onClick={() => handleModeChange('inspect')} />
+                    <NavBtn icon={<Activity size={20}/>} label="작업" active={activeMode === 'operate'} onClick={() => handleModeChange('operate')} />
+                    <NavBtn icon={<BarChart3 size={20}/>} label="리포트" active={activeMode === 'report'} onClick={goToReport} />
+                    <NavBtn icon={<MessageSquare size={20}/>} label="AI 비서" active={activeMode === 'chat'} onClick={() => handleModeChange('chat')} />
+                </div>
+              )}
             </div>
           );
         };
