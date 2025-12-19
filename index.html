@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HeavyGuard AI - POSCO E&C</title>
+    
+    <!-- 1. Tailwind CSS (디자인) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. React & ReactDOM (엔진) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 3. Babel (코드 변환기) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* 기본 스크롤 방지 및 폰트 설정 */
+        body { 
+            overflow: hidden; 
+            background-color: black; 
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        /* 애니메이션 정의 */
+        @keyframes scan {
+          0% { transform: translateY(-100%); opacity: 0; }
+          50% { opacity: 1; }
+          100% { transform: translateY(100%); opacity: 0; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        @keyframes slideDown {
+          from { transform: translateY(-100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-in { animation-duration: 0.5s; animation-fill-mode: both; }
+        .slide-in-from-right { animation-name: slideInRight; }
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        // --- 아이콘 컴포넌트 직접 정의 (외부 라이브러리 의존성 제거) ---
+        const Icon = ({ children, size = 24, className = "", ...props }) => (
+            <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width={size} 
+                height={size} 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className={className}
+                {...props}
+            >
+                {children}
+            </svg>
+        );
+
+        const Camera = (props) => <Icon {...props}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></Icon>;
+        const AlertTriangle = (props) => <Icon {...props}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></Icon>;
+        const CheckCircle = (props) => <Icon {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></Icon>;
+        const Info = (props) => <Icon {...props}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></Icon>;
+        const Activity = (props) => <Icon {...props}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></Icon>;
+        const Search = (props) => <Icon {...props}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Icon>;
+        const Target = (props) => <Icon {...props}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></Icon>;
+        const Eye = (props) => <Icon {...props}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></Icon>;
+        const Settings = (props) => <Icon {...props}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></Icon>;
+        const Radio = (props) => <Icon {...props}><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></Icon>;
+        const Zap = (props) => <Icon {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Icon>;
+        const ChevronRight = (props) => <Icon {...props}><polyline points="9 18 15 12 9 6"/></Icon>;
+        const BarChart3 = (props) => <Icon {...props}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></Icon>;
+        const Wind = (props) => <Icon {...props}><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></Icon>;
+        const Menu = (props) => <Icon {...props}><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/></Icon>;
+
+
+        const App = () => {
+          const [step, setStep] = useState('scan'); 
+          const [selectedPoint, setSelectedPoint] = useState(null);
+          const [isAnalyzing, setIsAnalyzing] = useState(false);
+          const [activeMode, setActiveMode] = useState('inspect'); 
+          const [cameraStatus, setCameraStatus] = useState('initializing'); 
+          
+          // 실시간 데이터 시뮬레이션
+          const [liveStats, setLiveStats] = useState({
+            angle: 45.2,
+            radius: 12.5,
+            load: 3.2,
+            maxLoad: 5.0,
+            sway: 0.5,
+            wind: 4.2
+          });
+
+          useEffect(() => {
+            setCameraStatus('initializing');
+            const timer = setTimeout(() => setCameraStatus('active'), 1000);
+            return () => clearTimeout(timer);
+          }, [step]);
+
+          useEffect(() => {
+            if (step === 'operation') {
+              const interval = setInterval(() => {
+                setLiveStats(prev => ({
+                  ...prev,
+                  angle: +(prev.angle + (Math.random() - 0.5) * 0.5).toFixed(1),
+                  load: +(prev.load + (Math.random() - 0.5) * 0.1).toFixed(1),
+                  sway: Math.random() * 2,
+                  wind: +(4.2 + (Math.random() - 0.5)).toFixed(1)
+                }));
+              }, 1000);
+              return () => clearInterval(interval);
+            }
+          }, [step]);
+
+          const inspectionPoints = [
+            { id: 1, name: 'Main Wire Rope', sub: '소선 단선 및 부식', top: '45%', left: '40%', status: 'danger', issue: '단선율 12% (교체필요)', law: '산안법 제63조' },
+            { id: 2, name: 'Joint Pin Bolt', sub: '체결 상태 및 유격', top: '35%', left: '55%', status: 'warning', issue: '미세 유격 감지', law: 'KOSHA G-10' },
+            { id: 3, name: 'Outrigger System', sub: '지반 지지력', top: '85%', left: '30%', status: 'success', issue: '접지 상태 양호', law: '안전기준 적합' }
+          ];
+
+          const handlePointClick = (point) => {
+            setSelectedPoint(point);
+            setIsAnalyzing(true);
+            setTimeout(() => setIsAnalyzing(false), 1500);
+            setStep('inspection');
+          };
+
+          const switchMode = (mode) => {
+            setStep(mode === 'inspect' ? 'mapping' : 'operation');
+            setActiveMode(mode);
+          };
+
+          return (
+            <div className="flex flex-col h-screen bg-black font-sans text-white overflow-hidden select-none relative">
+              
+              {/* 1. Header */}
+              <div className="absolute top-0 left-0 right-0 z-50 p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-1">
+                     <div className="w-2 h-2 rounded-full bg-[#00A0E9] shadow-[0_0_10px_#00A0E9]"></div>
+                     <span className="text-xs font-medium tracking-widest text-[#00A0E9] uppercase">POSCO E&C Smart Safety</span>
+                  </div>
+                  <h1 className="text-xl font-light tracking-tight text-white">HeavyGuard <span className="font-bold">AI</span></h1>
+                </div>
+                <div className="flex gap-3">
+                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/5">
+                    <Radio size={12} className={cameraStatus === 'active' ? 'text-green-400 animate-pulse' : 'text-gray-400'} />
+                    <span className="text-[10px] font-medium text-white/80 uppercase tracking-wider">
+                      {cameraStatus === 'active' ? 'Live Vision' : 'Connecting...'}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-white/10 rounded-full backdrop-blur-md border border-white/5">
+                    <Menu size={18} className="text-white/80" />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Main Viewport */}
+              <div className="relative flex-1 bg-black">
+                <div 
+                  className={`absolute inset-0 bg-cover bg-center transition-all duration-1000 ease-out ${cameraStatus === 'initializing' ? 'scale-105 blur-2xl opacity-50' : 'scale-100 blur-0 opacity-80'}`}
+                  style={{ backgroundImage: "url('https://images.unsplash.com/photo-1541888946425-d81bb19480c5?auto=format&fit=crop&q=80&w=1000')" }}
+                ></div>
+
+                {/* Scan Mode */}
+                {step === 'scan' && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="relative w-72 h-72">
+                      <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-white/80 rounded-tl-3xl"></div>
+                      <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-white/80 rounded-tr-3xl"></div>
+                      <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-white/80 rounded-bl-3xl"></div>
+                      <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-white/80 rounded-br-3xl"></div>
+                      <div className="absolute inset-0 bg-gradient-to-b from-[#00A0E9]/0 via-[#00A0E9]/20 to-[#00A0E9]/0 animate-[scan_2s_infinite]"></div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Target size={48} className="text-white/20" />
+                      </div>
+                    </div>
+
+                    <div className="mt-12 text-center space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                      <h2 className="text-2xl font-light text-white">장비 인식</h2>
+                      <p className="text-sm text-white/60 font-light">카메라를 장비 전체가 보이도록 비추세요.</p>
+                    </div>
+
+                    <button 
+                      onClick={() => { setStep('mapping'); }}
+                      className="mt-10 px-8 py-3 bg-[#00A0E9] hover:bg-[#008AC9] text-white rounded-full font-medium text-sm shadow-[0_0_20px_rgba(0,160,233,0.4)] transition-all active:scale-95 flex items-center gap-2"
+                    >
+                      <Zap size={16} fill="currentColor" /> 스마트 스캔 시작
+                    </button>
+                  </div>
+                )}
+
+                {/* AR Overlay Layer */}
+                {(step === 'mapping' || step === 'operation') && (
+                  <div className="absolute inset-0">
+                    <div className="absolute top-24 left-1/2 -translate-x-1/2 flex bg-black/40 backdrop-blur-xl p-1 rounded-full border border-white/10 shadow-lg z-20">
+                      <button 
+                        onClick={() => switchMode('inspect')}
+                        className={`px-6 py-2 rounded-full text-xs font-medium transition-all duration-300 ${activeMode === 'inspect' ? 'bg-white text-black shadow-md' : 'text-white/60 hover:text-white'}`}
+                      >
+                        Inspection
+                      </button>
+                      <button 
+                        onClick={() => switchMode('operate')}
+                        className={`px-6 py-2 rounded-full text-xs font-medium transition-all duration-300 ${activeMode === 'operate' ? 'bg-white text-black shadow-md' : 'text-white/60 hover:text-white'}`}
+                      >
+                        Operation
+                      </button>
+                    </div>
+
+                    {/* Inspect Mode */}
+                    {activeMode === 'inspect' && step === 'mapping' && inspectionPoints.map((p) => (
+                      <div key={p.id} style={{ top: p.top, left: p.left }} className="absolute transform -translate-x-1/2 -translate-y-1/2 z-10 group">
+                        <button 
+                          onClick={() => handlePointClick(p)}
+                          className={`relative w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-md transition-transform duration-300 group-hover:scale-110 ${p.status === 'danger' ? 'bg-red-500/20 ring-1 ring-red-500' : p.status === 'warning' ? 'bg-amber-500/20 ring-1 ring-amber-500' : 'bg-[#00A0E9]/20 ring-1 ring-[#00A0E9]'}`}
+                        >
+                          <div className={`w-3 h-3 rounded-full ${p.status === 'danger' ? 'bg-red-500' : p.status === 'warning' ? 'bg-amber-500' : 'bg-[#00A0E9]'} shadow-[0_0_10px_currentColor]`}></div>
+                        </button>
+                        <div className="absolute left-12 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                          <div className="bg-black/60 backdrop-blur-xl px-4 py-2 rounded-xl border border-white/10">
+                            <p className="text-xs font-bold text-white whitespace-nowrap">{p.name}</p>
+                            <p className="text-[10px] text-white/60">{p.sub}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Operate Mode */}
+                    {activeMode === 'operate' && (
+                      <div className="absolute inset-0 pointer-events-none">
+                        <div className="absolute bottom-[-20%] left-[-20%] w-[140%] h-[60%] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500/10 via-transparent to-transparent opacity-50 transform -rotateX-60 scale-y-50 pointer-events-none"></div>
+                        <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 text-red-500/80 text-[10px] font-bold tracking-[0.2em] uppercase animate-pulse">
+                          Danger Zone Detected
+                        </div>
+
+                        <div className="absolute top-40 left-6 flex flex-col gap-4">
+                          <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/5 w-32">
+                            <div className="flex items-center gap-2 text-white/50 text-[10px] uppercase font-bold mb-1">
+                              <Target size={12} /> Boom Angle
+                            </div>
+                            <div className="text-3xl font-light text-white">{liveStats.angle}°</div>
+                          </div>
+                          <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/5 w-32">
+                            <div className="flex items-center gap-2 text-white/50 text-[10px] uppercase font-bold mb-1">
+                              <Wind size={12} /> Wind Spd
+                            </div>
+                            <div className="text-3xl font-light text-white">{liveStats.wind}<span className="text-sm ml-1 text-white/50">m/s</span></div>
+                          </div>
+                        </div>
+
+                        <div className="absolute top-40 right-6 flex flex-col gap-4 items-end">
+                           <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/5 text-right w-40">
+                            <div className="flex items-center justify-end gap-2 text-white/50 text-[10px] uppercase font-bold mb-1">
+                              Total Load <Activity size={12} />
+                            </div>
+                            <div className={`text-4xl font-light transition-colors duration-300 ${liveStats.load > liveStats.maxLoad * 0.9 ? 'text-red-500' : 'text-[#00A0E9]'}`}>
+                              {liveStats.load}<span className="text-lg ml-1 text-white/50">ton</span>
+                            </div>
+                            <div className="text-[10px] text-white/40 mt-1">Max Capacity: {liveStats.maxLoad}t</div>
+                            <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                              <div 
+                                className={`h-full transition-all duration-500 ${liveStats.load > liveStats.maxLoad * 0.9 ? 'bg-red-500' : 'bg-[#00A0E9]'}`} 
+                                style={{ width: `${(liveStats.load / liveStats.maxLoad) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {liveStats.sway > 1.6 && (
+                           <div className="absolute top-24 left-6 right-6 z-40 animate-[slideDown_0.5s_ease-out]">
+                              <div className="bg-red-500/90 backdrop-blur-xl p-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-white/10">
+                                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                                  <AlertTriangle className="text-white" size={24} />
+                                </div>
+                                <div className="flex-1">
+                                  <h3 className="text-white font-bold text-sm">급조작 경고 (Sway Warning)</h3>
+                                  <p className="text-white/80 text-xs mt-0.5">인양물 흔들림 과다. 레버 조작을 멈추세요.</p>
+                                </div>
+                              </div>
+                           </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Detail Popup */}
+                {step === 'inspection' && selectedPoint && (
+                  <>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-30" onClick={() => setStep('mapping')} />
+                    <div className="absolute bottom-0 left-0 right-0 bg-[#1c1c1e] rounded-t-[32px] p-8 z-40 animate-[slideUp_0.4s_ease-out] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+                      <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-8"></div>
+                      
+                      <div className="flex justify-between items-start mb-8">
+                        <div>
+                          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-3 ${selectedPoint.status === 'danger' ? 'bg-red-500/20 text-red-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
+                            {selectedPoint.status === 'danger' ? <AlertTriangle size={12}/> : <CheckCircle size={12}/>}
+                            {selectedPoint.status === 'danger' ? 'Critical Issue' : 'Safe Condition'}
+                          </div>
+                          <h2 className="text-3xl font-light text-white">{selectedPoint.name}</h2>
+                        </div>
+                        <button onClick={() => setStep('mapping')} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
+                          <ChevronRight className="rotate-90 text-white/60" />
+                        </button>
+                      </div>
+
+                      {isAnalyzing ? (
+                        <div className="h-40 flex flex-col items-center justify-center space-y-4">
+                          <div className="w-8 h-8 border-t-2 border-[#00A0E9] rounded-full animate-spin"></div>
+                          <p className="text-sm text-[#00A0E9] animate-pulse">AI Analysing based on KOSHA...</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-6">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                              <p className="text-xs text-white/40 uppercase font-bold mb-1">Detected Issue</p>
+                              <p className="text-white font-medium">{selectedPoint.issue}</p>
+                            </div>
+                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                              <p className="text-xs text-white/40 uppercase font-bold mb-1">Legal Code</p>
+                              <p className="text-white font-medium">{selectedPoint.law}</p>
+                            </div>
+                          </div>
+
+                          <div className="p-4 rounded-2xl bg-[#00A0E9]/10 border border-[#00A0E9]/20 flex gap-3">
+                            <Info className="text-[#00A0E9] shrink-0" size={20} />
+                            <p className="text-xs text-[#00A0E9] leading-relaxed">
+                              POSCO 안전 가이드: 해당 결함은 즉시 작업 중단 사유에 해당합니다. 관리자에게 자동 보고됩니다.
+                            </p>
+                          </div>
+
+                          <button 
+                            onClick={() => switchMode('operate')}
+                            className="w-full py-4 bg-white text-black rounded-2xl font-bold text-sm shadow-xl active:scale-95 transition-transform"
+                          >
+                            확인 및 작업 모드 전환
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Coaching / Report */}
+                {step === 'coaching' && (
+                   <div className="absolute inset-0 bg-[#000] z-50 flex flex-col p-6 animate-in slide-in-from-right">
+                      <div className="flex justify-between items-center mb-10 mt-4">
+                         <h2 className="text-2xl font-light">Daily Report</h2>
+                         <button onClick={() => setStep('scan')} className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center">✕</button>
+                      </div>
+
+                      <div className="bg-gradient-to-br from-[#00A0E9] to-[#0077b6] p-8 rounded-[32px] mb-6 shadow-2xl relative overflow-hidden">
+                         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
+                         <p className="text-white/80 font-medium mb-1">Safety Proficiency</p>
+                         <div className="flex items-baseline gap-1">
+                            <span className="text-5xl font-bold">88</span>
+                            <span className="text-xl text-white/60">/100</span>
+                         </div>
+                         <div className="mt-6 flex gap-4">
+                            <div className="px-3 py-1 bg-black/20 rounded-lg text-xs backdrop-blur-sm">Sway Control: A</div>
+                            <div className="px-3 py-1 bg-black/20 rounded-lg text-xs backdrop-blur-sm">Load Stability: B+</div>
+                         </div>
+                      </div>
+
+                      <div className="flex-1 bg-white/5 rounded-[32px] p-6 border border-white/5">
+                         <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-medium text-white/90">Work Pattern</h3>
+                            <BarChart3 className="text-white/40" size={20} />
+                         </div>
+                         <div className="flex items-end justify-between h-40 gap-2">
+                            {[40, 70, 50, 90, 60, 30, 80].map((h, i) => (
+                               <div key={i} className="w-full bg-white/10 rounded-t-lg relative group overflow-hidden">
+                                  <div 
+                                    className="absolute bottom-0 w-full bg-[#00A0E9] transition-all duration-1000" 
+                                    style={{ height: `${h}%`, opacity: i === 3 ? 1 : 0.5 }}
+                                  ></div>
+                               </div>
+                            ))}
+                         </div>
+                         <p className="mt-6 text-sm text-white/60 leading-relaxed">
+                            오후 2시 경 붐대 조작 속도가 평균 대비 다소 빨랐습니다. <span className="text-[#00A0E9]">부드러운 가속(Soft Start)</span>을 유지하면 점수가 향상됩니다.
+                         </p>
+                      </div>
+                      
+                      <button onClick={() => setStep('scan')} className="mt-6 w-full py-4 border border-white/20 rounded-2xl text-sm font-medium hover:bg-white/5 transition-colors">
+                         Close Report
+                      </button>
+                   </div>
+                )}
+              </div>
+
+              {/* Bottom Navigation */}
+              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50">
+                <div className="flex items-center gap-1 bg-black/60 backdrop-blur-2xl p-1.5 rounded-full border border-white/10 shadow-2xl">
+                  {/* Scan Button */}
+                  <button 
+                    onClick={() => setStep('scan')}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${step === 'scan' ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                  >
+                    <Camera size={20} />
+                  </button>
+                  
+                  {/* Inspect Button */}
+                  <button 
+                    onClick={() => { setStep('mapping'); setActiveMode('inspect'); }}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${(step === 'mapping' || step === 'inspection') ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                  >
+                    <Eye size={20} />
+                  </button>
+                  
+                  {/* Operate Button */}
+                  <button 
+                    onClick={() => { setStep('operation'); setActiveMode('operate'); }}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${(step === 'operation') ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                  >
+                    <Activity size={20} />
+                  </button>
+                  
+                  {/* Coaching Button */}
+                   <button 
+                    onClick={() => setStep('coaching')}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${step === 'coaching' ? 'bg-white text-black' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                  >
+                    <BarChart3 size={20} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
