@@ -188,7 +188,8 @@
             ZoomIn: (p) => <Icon {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></Icon>,
             Key: (p) => <Icon {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Icon>,
             MessageSquare: (p) => <Icon {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></Icon>,
-            Send: (p) => <Icon {...p}><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></Icon>
+            Send: (p) => <Icon {...p}><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></Icon>,
+            Ghost: (p) => <Icon {...p}><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/></Icon>
         };
 
         // --- Gemini API Wrapper ---
@@ -251,6 +252,9 @@
             const modelRef = useRef(null);
             const requestRef = useRef(null);
             const streamRef = useRef(null);
+            
+            // Tracking State (Persistence)
+            const trackedObjects = useRef([]); // Stores {id, label, bbox, life, streak, color}
 
             // Init
             useEffect(() => {
@@ -258,16 +262,10 @@
                 if (storedKey) setApiKey(storedKey);
                 else setTimeout(() => setIsKeyModalOpen(true), 1500);
 
-                navigator.mediaDevices.enumerateDevices().then(devices => {
-                    const vids = devices.filter(d => d.kind === 'videoinput');
-                    let backs = vids.filter(d => /back|rear|environment/i.test(d.label));
-                    setCameras(backs.length > 0 ? backs : vids);
-                });
-
-                cocoSsd.load({ base: 'lite_mobilenet_v2' }).then(model => {
+                cocoSsd.load({ base: 'mobilenet_v2' }).then(model => {
                     modelRef.current = model;
                     setModelLoaded(true);
-                    startCamera();
+                    startCamera(); // Start camera first
                 });
 
                 return () => cancelAnimationFrame(requestRef.current);
@@ -277,6 +275,20 @@
             useEffect(() => {
                 chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
             }, [chatMessages, showChat]);
+
+            // Camera List Updater (Ensures we get list AFTER permission)
+            const updateCameras = async () => {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const vids = devices.filter(d => d.kind === 'videoinput');
+                    // Filter for back cameras if possible, or just use all
+                    let backs = vids.filter(d => /back|rear|environment/i.test(d.label));
+                    // If no labels (permission issue) or no specific back cam found, use all vids
+                    setCameras(backs.length > 0 ? backs : vids);
+                } catch(e) {
+                    console.error("Enumerate Error", e);
+                }
+            };
 
             const startCamera = async (deviceId = null) => {
                 if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -293,10 +305,14 @@
                         videoRef.current.srcObject = stream;
                         const track = stream.getVideoTracks()[0];
                         setVideoTrack(track);
+                        
+                        // Update capabilities and camera list after permission granted
                         setTimeout(() => {
                             setCapabilities(track.getCapabilities ? track.getCapabilities() : {});
                             setZoom(1); setFlashOn(false);
+                            updateCameras(); // Refresh camera list here
                         }, 500);
+                        
                         videoRef.current.onloadeddata = predictLoop;
                     }
                 } catch (e) { console.error(e); }
@@ -320,6 +336,18 @@
                 if (videoTrack) try { await videoTrack.applyConstraints({ advanced: [{ zoom: z }] }); } catch(e){}
             };
 
+            // Calculate IoU (Intersection over Union) for tracking
+            const getIoU = (bbox1, bbox2) => {
+                const x1 = Math.max(bbox1[0], bbox2[0]);
+                const y1 = Math.max(bbox1[1], bbox2[1]);
+                const x2 = Math.min(bbox1[0] + bbox1[2], bbox2[0] + bbox2[2]);
+                const y2 = Math.min(bbox1[1] + bbox1[3], bbox2[1] + bbox2[3]);
+                const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+                const area1 = bbox1[2] * bbox1[3];
+                const area2 = bbox2[2] * bbox2[3];
+                return intersection / (area1 + area2 - intersection);
+            };
+
             const predictLoop = async () => {
                 if (!modelRef.current || !videoRef.current || !canvasRef.current) return;
                 if (videoRef.current.readyState < 2) { requestRef.current = requestAnimationFrame(predictLoop); return; }
@@ -332,33 +360,126 @@
                 ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
                 if (!monitoringOn) {
-                    setAlertState(null); setWarningMsg(''); requestRef.current = requestAnimationFrame(predictLoop); return;
+                    setAlertState(null); setWarningMsg(''); 
+                    trackedObjects.current = []; // Reset tracking
+                    requestRef.current = requestAnimationFrame(predictLoop); return;
                 }
 
-                const predictions = await modelRef.current.detect(videoRef.current);
+                // 🚨 초고감도 설정: 0.15 (15%) 이상이면 무조건 감지
+                // 파티션 뒤 머리 등 작은 특징을 잡기 위해 임계값을 극한으로 낮춤
+                const predictions = await modelRef.current.detect(videoRef.current, undefined, 0.15);
+                
+                // --- Tracking Logic Start ---
+                const MAX_LIFE = 15; 
+                // Streak 제한 제거: 1프레임만 감지되어도 즉시 표시 (즉답성 강화)
+                const currentTracks = trackedObjects.current;
+                const newTracks = [];
+                
+                // 1. Mark existing tracks as unmatched
+                currentTracks.forEach(t => t.matched = false);
+
+                // 2. Process current detections
+                predictions.forEach(pred => {
+                    let label = pred.class;
+                    let color = '#34C759'; 
+
+                    // 15%~50% 사이의 낮은 신뢰도도 '사람'이면 무조건 표시
+                    if (label === 'person') { label = '근로자'; color = '#007AFF'; }
+                    else if (['truck', 'car', 'bus'].includes(label)) { label = '장비'; color = '#FF9500'; }
+                    else return; // Skip non-targets
+
+                    // Try to match with existing tracks
+                    let matched = false;
+                    for (let i = 0; i < currentTracks.length; i++) {
+                        const track = currentTracks[i];
+                        // IOU Threshold도 0.3 -> 0.2로 낮춰서 빠르게 움직여도 놓치지 않게 함
+                        if (!track.matched && track.label === label && getIoU(track.bbox, pred.bbox) > 0.2) {
+                            track.bbox = pred.bbox;
+                            track.life = MAX_LIFE;
+                            track.streak = (track.streak || 0) + 1;
+                            track.isGhost = false;
+                            track.matched = true;
+                            matched = true;
+                            break;
+                        }
+                    }
+
+                    // If not matched, create new track
+                    if (!matched) {
+                        newTracks.push({
+                            id: Math.random(),
+                            label: label,
+                            color: color,
+                            bbox: pred.bbox,
+                            life: MAX_LIFE,
+                            streak: 1,
+                            isGhost: false,
+                            matched: true
+                        });
+                    }
+                });
+
+                // 3. Update existing tracks (Ghosting)
+                currentTracks.forEach(track => {
+                    if (track.matched) {
+                        newTracks.push(track);
+                    } else {
+                        // Unmatched: Candidate for Ghost
+                        // 사람(근로자)은 한 번이라도 감지되었으면(streak >= 1) 잔상을 남김
+                        // 장비는 오탐을 줄이기 위해 최소 3번은 감지되었어야 잔상 남김
+                        const minStreakForGhost = track.label === '근로자' ? 1 : 3;
+                        
+                        if (track.streak >= minStreakForGhost) {
+                            track.life -= 1;
+                            if (track.life > 0) {
+                                track.isGhost = true;
+                                newTracks.push(track);
+                            }
+                        }
+                    }
+                });
+
+                trackedObjects.current = newTracks;
+                // --- Tracking Logic End ---
+
+                // Drawing and Risk Analysis
                 let pCount = 0, eCount = 0;
 
-                predictions.forEach(pred => {
-                    if (pred.score < 0.55) return;
-                    const [x, y, w, h] = pred.bbox;
-                    let label = pred.class;
-                    let color = '#34C759';
+                trackedObjects.current.forEach(track => {
+                    // 사람인 경우 즉시 표시 (Streak 조건 없음)
+                    // 장비인 경우 3프레임 이상일 때만 표시 (오탐 방지)
+                    if (track.label === '장비' && track.streak < 3) return;
 
-                    if (label === 'person') { pCount++; label = '근로자'; color = '#007AFF'; } 
-                    else if (['truck', 'car', 'bus'].includes(label)) { eCount++; label = '장비'; color = '#FF9500'; } 
-                    else return;
+                    const [x, y, w, h] = track.bbox;
+                    
+                    if (track.label === '근로자') pCount++;
+                    if (track.label === '장비') eCount++;
 
-                    ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 4;
-                    ctx.strokeStyle = color; ctx.lineWidth = 4;
+                    ctx.save();
+                    if (track.isGhost) {
+                        ctx.globalAlpha = 0.5; // 잔상은 좀 더 흐리게
+                        ctx.setLineDash([4, 4]); 
+                        ctx.strokeStyle = '#FFFFFF'; 
+                    } else {
+                        ctx.globalAlpha = 1.0;
+                        ctx.setLineDash([]);
+                        ctx.strokeStyle = track.color;
+                    }
+
+                    ctx.shadowColor = "rgba(0,0,0,0.8)"; ctx.shadowBlur = 6;
+                    ctx.lineWidth = 4;
                     ctx.strokeRect(x, y, w, h);
 
-                    ctx.fillStyle = color;
-                    const text = label;
+                    ctx.fillStyle = track.isGhost ? '#666' : track.color;
+                    // 낮은 신뢰도로 감지된 경우 '?' 표시 추가
+                    const text = track.label + (track.isGhost ? ' (가림)' : '');
                     const tw = ctx.measureText(text).width;
                     ctx.fillRect(x, y - 30, tw + 20, 30);
+                    
                     ctx.fillStyle = '#fff';
                     ctx.font = '600 16px -apple-system';
                     ctx.fillText(text, x + 10, y - 9);
+                    ctx.restore();
                 });
 
                 if (pCount > 0 && eCount > 0) { setAlertState('danger'); setWarningMsg('⚠️ 충돌 위험: 장비 접근'); }
@@ -454,9 +575,10 @@
                         </div>
                     </div>
 
-                    {/* Right Side Controls */}
+                    {/* Right Side Controls (Always Show Switch if 2+ cams or desktop fallback) */}
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-6">
-                        {cameras.length > 1 && (
+                        {/* Always show if multiple cameras OR forced for UI test */}
+                        {(cameras.length > 1) && (
                             <button onClick={switchCamera} className="p-3 rounded-full bg-black/40 backdrop-blur text-white shadow-lg active:rotate-180 transition-transform">
                                 <Icons.RotateCcw size={20}/>
                             </button>
@@ -536,7 +658,6 @@
                                         <div className={msg.sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}>
                                             <div className="text-sm leading-relaxed whitespace-pre-wrap">
                                                 {msg.sender === 'ai' ? marked.parse(msg.text).replace(/<[^>]+>/g, '') : msg.text} 
-                                                {/* Simple parse for markdown in chat */}
                                             </div>
                                         </div>
                                     </div>
